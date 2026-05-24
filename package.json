@@ -12,6 +12,8 @@
     "format": "biome format --write"
   },
   "dependencies": {
+    "@radix-ui/react-popover": "^1.1.15",
+    "class-variance-authority": "^0.7.1",
     "fumadocs-core": "16.9.1",
     "fumadocs-mdx": "15.0.8",
     "fumadocs-ui": "16.9.1",
@@ -22,6 +24,7 @@
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
+    "@biomejs/biome": "^2.4.15",
     "@tailwindcss/postcss": "^4.3.0",
     "@types/mdx": "^2.0.13",
     "@types/node": "^25.8.0",
@@ -29,7 +32,6 @@
     "@types/react-dom": "^19.2.3",
     "postcss": "^8.5.14",
     "tailwindcss": "^4.3.0",
-    "typescript": "^6.0.3",
-    "@biomejs/biome": "^2.4.15"
+    "typescript": "^6.0.3"
   }
 }
