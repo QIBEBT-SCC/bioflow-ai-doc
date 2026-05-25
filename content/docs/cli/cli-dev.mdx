@@ -1,0 +1,185 @@
+---
+title: Developer CLI
+description: Development and evaluation commands for contributors and maintainers
+---
+
+<Callout type="warn">
+  These commands are intended for contributors and maintainers only. Regular users do not need them.
+</Callout>
+
+Both the `dev` and `eval` subgroups depend on development dependencies not installed by default. Install them before using any command on this page:
+
+```bash
+uv sync --dev
+```
+
+---
+
+## `dev` — Tool-node creation pipeline
+
+```bash
+uv run bioflow-ai dev <subcommand>
+```
+
+These commands drive the automated pipeline that uses an AI agent to generate workflow node definitions from container images. Pipeline state is persisted in a local DuckDB file at `presets/build/develop.db`.
+
+---
+
+### `create-tools`
+
+```bash
+uv run bioflow-ai dev create-tools [--index INDEX]
+```
+
+Runs the AI tool-creation agent over all unprocessed entries in the `tool_functions` table. For each entry the agent inspects the container image, runs its help command, and generates a fully configured tool node saved to the database.
+
+| Option | Description |
+| --- | --- |
+| `--index INDEX` | Process only the entry at this index. Omit to process all pending entries. |
+
+---
+
+### `search`
+
+```bash
+uv run bioflow-ai dev search --name NAME
+```
+
+Searches `tool_functions` by tool name and prints matching records with Rich formatting. Useful for inspecting the state of a specific entry before or after creation.
+
+---
+
+### `read-interrupt`
+
+```bash
+uv run bioflow-ai dev read-interrupt INDEX
+```
+
+Reads and displays the interrupt payload for the agent run at `INDEX`. Use this to understand why a tool-creation run was paused before deciding how to resume it.
+
+---
+
+### `continue-run`
+
+```bash
+uv run bioflow-ai dev continue-run INDEX [OPTIONS]
+```
+
+Resumes an interrupted agent run.
+
+| Option | Description |
+| --- | --- |
+| `--approve` | Resume with an implicit approval (equivalent to the user saying "yes"). |
+| `-m, --message TEXT` | Resume by sending a specific message to the agent. |
+
+```bash
+# Approve the interrupt and continue
+uv run bioflow-ai dev continue-run 42 --approve
+
+# Send a correction message
+uv run bioflow-ai dev continue-run 42 -m "Use --threads instead of -p for this tool."
+```
+
+---
+
+### `check`
+
+```bash
+uv run bioflow-ai dev check [OPTIONS]
+```
+
+Scans the DuckDB state for orphaned records (entries whose `tool_node` no longer exists in PostgreSQL) and resets them so they can be re-processed.
+
+| Option | Description |
+| --- | --- |
+| `--clean-interrupted` | Also reset records in the `interrupted` state. |
+| `--dry-run` | Print what would be reset without making any changes. |
+
+---
+
+### `delete-prebuild-tool`
+
+```bash
+uv run bioflow-ai dev delete-prebuild-tool INDEX [INDEX ...]
+```
+
+Deletes one or more tool records by index, cleaning up the DuckDB row, the agent checkpoint in Redis, the tool node in PostgreSQL, and the run output directory on disk.
+
+```bash
+# Delete a single record
+uv run bioflow-ai dev delete-prebuild-tool 61
+
+# Delete multiple records at once
+uv run bioflow-ai dev delete-prebuild-tool 61 62 63 65
+```
+
+---
+
+### `export`
+
+```bash
+uv run bioflow-ai dev export [OPTIONS]
+```
+
+Exports database tables to Parquet files under `presets/`, which serve as the input for `uv run bioflow-ai init init-db`.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--db` | `images docs tools` | Datasets to export. Can be specified multiple times. Choices: `images`, `docs`, `tools`. |
+| `--upload` | `false` | Upload the resulting Parquet files to the Hugging Face prebuild bucket after exporting. |
+
+```bash
+# Export everything locally
+uv run bioflow-ai dev export
+
+# Export only tool definitions and upload to Hugging Face
+uv run bioflow-ai dev export --db tools --upload
+```
+
+---
+
+### `statistic`
+
+```bash
+uv run bioflow-ai dev statistic
+```
+
+Prints a summary table of the tool-creation pipeline: total records, processed count, success/failure breakdown, and the latest interrupted record.
+
+---
+
+## `eval` — Agent evaluation
+
+```bash
+uv run bioflow-ai eval <subcommand>
+```
+
+---
+
+### `eval wf`
+
+```bash
+uv run bioflow-ai eval wf TASK_FILE [OPTIONS]
+```
+
+Runs the workflow-design agent end-to-end on a task description file to verify it produces a valid workflow. Useful for benchmarking prompt changes or model swaps.
+
+| Argument / Option | Description |
+| --- | --- |
+| `TASK_FILE` | Path to a plain-text file containing the task prompt. |
+| `-p, --paper PATH` | Optional PDF paper to attach as additional context. |
+| `-t, --thread-id ID` | Checkpoint thread ID. Reuse the same ID to resume a previous run. |
+| `--drop-old` | Delete the existing checkpoint for this thread ID before starting. |
+
+```bash
+# Basic evaluation
+uv run bioflow-ai eval wf tasks/rna_seq.txt --thread-id eval-rna-001
+
+# With a reference paper, starting fresh
+uv run bioflow-ai eval wf tasks/rna_seq.txt \
+  --paper papers/2024_method.pdf \
+  --thread-id eval-rna-002 \
+  --drop-old
+```
+
+Results (project ID, workflow UID, output path) are persisted in `presets/build/evaluate.db` and can be reviewed across runs.

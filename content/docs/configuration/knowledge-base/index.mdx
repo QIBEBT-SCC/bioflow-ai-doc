@@ -1,0 +1,34 @@
+---
+title: Knowledge Base
+description: Configure the vector store and embedding model for AI-assisted tool discovery
+---
+
+The knowledge base indexes tool documentation and parameter descriptions, powering the AI agents' tool discovery and workflow design features. It requires a running Milvus instance (started automatically via `docker-compose.yml`) and an embedding model.
+
+```toml
+[knowledge_base]
+milvus_url      = "http://localhost:19530"
+use_local_model = false
+```
+
+| Key | Description |
+| --- | --- |
+| `milvus_url` | Milvus vector store address. Defaults to the bundled Docker service. |
+| `use_local_model` | `false` = remote API (default), `true` = local model inference. |
+
+---
+
+## Choosing a mode
+
+| Scenario | Recommended mode |
+| --- | --- |
+| Quick setup, no GPU needed | Remote API |
+| Air-gapped / private network | Local model |
+| Data must not leave the server | Local model |
+| Low-latency, high-throughput indexing | Local model (GPU) |
+
+## Next step
+
+<Cards>
+  <Card title="Embedding Model" href="/docs/configuration/knowledge-base/embedding-model" description="Configure remote API or local embedding inference" />
+</Cards>

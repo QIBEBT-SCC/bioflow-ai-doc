@@ -1,0 +1,20 @@
+---
+title: mineru
+description: Configure the MinerU Cloud API parser
+---
+
+Calls the hosted [MinerU cloud API](https://mineru.net). No local deployment is needed, but an API key is required.
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "mineru"
+
+[pdf_parser.mineru]
+api_url = "https://api.mineru.app"
+api_key = ""
+timeout = 600
+```
+
+Fill in `api_key` with your MinerU API key. Register at [mineru.net](https://mineru.net) to obtain one.

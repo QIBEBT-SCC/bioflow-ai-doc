@@ -1,4 +1,11 @@
 {
   "title": "BioFlowAI",
-  "pages": ["introduction", "installation"]
+  "pages": [
+    "---Introduction---",
+    "...introduction",
+    "---Configuration---",
+    "...configuration",
+    "---CLI---",
+    "...cli"
+  ]
 }

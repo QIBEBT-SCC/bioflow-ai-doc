@@ -1,0 +1,19 @@
+---
+title: doc2x
+description: Configure the Doc2X Cloud API parser
+---
+
+Calls the [Doc2X](https://doc2x.noedgeai.com) cloud API for PDF parsing.
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "doc2x"
+
+[pdf_parser.doc2x]
+api_key = ""
+timeout = 600
+```
+
+Register at [doc2x.noedgeai.com](https://doc2x.noedgeai.com) to obtain an API key.

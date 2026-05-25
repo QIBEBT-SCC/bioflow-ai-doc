@@ -1,0 +1,133 @@
+---
+title: CLI Reference
+description: Management commands for deploying and operating BioFlowAI
+---
+
+BioFlowAI ships a `bioflow-ai` CLI entry point managed by `uv`. Every command follows the pattern:
+
+```bash
+uv run bioflow-ai <command> [options]
+```
+
+Append `--help` to any command or subgroup to print its usage inline:
+
+```bash
+uv run bioflow-ai --help
+uv run bioflow-ai init --help
+uv run bioflow-ai init rebuild-index --help
+```
+
+<Callout type="info">
+  This page covers commands for regular deployment and administration. For the `dev` and `eval` subgroups used during development, see [Developer CLI](/docs/cli-dev).
+</Callout>
+
+---
+
+## `api` — Start the API server
+
+```bash
+uv run bioflow-ai api
+```
+
+Starts the FastAPI application with Uvicorn. The server listens on the host and port defined in `config.toml` (`[network]`), defaulting to `0.0.0.0:8000`.
+
+Keep this process running in a dedicated terminal or manage it with a process supervisor (systemd, supervisord, etc.).
+
+---
+
+## `worker` — Start the Celery worker
+
+```bash
+uv run bioflow-ai worker
+```
+
+Starts the Celery worker that picks up and executes workflow tasks. The worker connects to RabbitMQ (broker) and Redis (backend) as configured under `[celery]` in `config.toml`.
+
+The API server and the worker must both be running for workflow execution to work.
+
+---
+
+## `init` — Initialisation and database management
+
+```bash
+uv run bioflow-ai init <subcommand>
+```
+
+### `system-init`
+
+```bash
+uv run bioflow-ai init system-init
+```
+
+Full one-time initialisation. Runs the following steps in order:
+
+1. Creates the default admin account (skipped if any user already exists)
+2. Imports container image records from `presets/images.parquet`
+3. Imports tool documentation from `presets/tool_docs.parquet`
+4. Imports tool node definitions from `presets/tools.parquet`
+5. Rebuilds all Milvus vector indexes
+
+If a preset file is not found locally it is downloaded automatically from the project's Hugging Face bucket.
+
+Run this **once** after a fresh installation. See [`init-db`](#init-db) and [`rebuild-index`](#rebuild-index) for incremental updates.
+
+---
+
+### `create-admin`
+
+```bash
+uv run bioflow-ai init create-admin
+```
+
+Creates the default admin account (`admin@email.com` / `admin`) only if the user table is empty. Safe to call on an existing installation — it exits without making any changes if users already exist.
+
+<Callout type="warn">
+  Change the default password immediately after first login.
+</Callout>
+
+---
+
+### `init-db`
+
+```bash
+uv run bioflow-ai init init-db [OPTIONS]
+```
+
+Imports preset data records into the database and rebuilds the corresponding Milvus vector indexes.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `-d, --databases` | `all` | Target dataset: `all`, `image`, `tool`, or `doc`. |
+| `--drop-old` | `false` | Drop existing records before importing. Without this flag, new records are appended. |
+
+```bash
+# Re-import everything, replacing existing records
+uv run bioflow-ai init init-db --drop-old
+
+# Re-import tool definitions only, leaving images and docs untouched
+uv run bioflow-ai init init-db -d tool --drop-old
+```
+
+---
+
+### `rebuild-index`
+
+```bash
+uv run bioflow-ai init rebuild-index [OPTIONS]
+```
+
+Drops and rebuilds Milvus vector indexes from current database contents, without touching the relational database records.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `-c, --collections` | `all` | Target collection: `all`, `tool`, `image`, or `processor`. |
+
+```bash
+# Rebuild all collections
+uv run bioflow-ai init rebuild-index
+
+# Rebuild only the tool collection
+uv run bioflow-ai init rebuild-index -c tool
+```
+
+Use this after manually editing tool or image records, or to recover from a corrupted vector index.

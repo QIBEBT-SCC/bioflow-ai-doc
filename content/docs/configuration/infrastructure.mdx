@@ -1,0 +1,249 @@
+---
+title: Infrastructure Services
+description: Configure PostgreSQL, Redis, RabbitMQ, object storage, and Milvus
+---
+
+The services below are all managed by `docker-compose.yml`. For a default local deployment **no changes are needed** — `config.example.toml` and `docker-compose.yml` are already aligned.
+
+Only read on if you need to change a password, resolve a port conflict, or replace a bundled service with an external one.
+
+<Callout type="warn">
+  `config.toml` and `docker-compose.yml` must always be kept in sync. Changing a port or password in one place without updating the other will prevent the application from connecting.
+</Callout>
+
+---
+
+<Accordions>
+
+<Accordion title="PostgreSQL  [persistent.database]">
+
+### config.toml
+
+```toml
+[persistent.database]
+db_url = "postgresql+psycopg://bioflow_ai:123456@127.0.0.1:5432/bioflow_ai"
+```
+
+URL format: `postgresql+psycopg://USER:PASSWORD@HOST:PORT/DBNAME`
+
+### docker-compose.yml
+
+```yaml
+postgres-db:
+  environment:
+    POSTGRES_USER: bioflow_ai     # → user in db_url
+    POSTGRES_PASSWORD: 123456     # → password in db_url
+    POSTGRES_DB: bioflow_ai       # → dbname in db_url
+  ports:
+    - "5432:5432"                 # left side → port in db_url
+```
+
+### Change the password
+
+1. Update `POSTGRES_PASSWORD` in `docker-compose.yml`.
+2. Update the password field in `db_url` in `config.toml`.
+3. Recreate the container:
+   ```bash
+   docker compose up -d --force-recreate postgres-db
+   ```
+
+<Callout type="info">
+  PostgreSQL only reads `POSTGRES_PASSWORD` on first initialisation. If the data volume already exists, update the password inside the running database manually — or delete the volume and reinitialise.
+</Callout>
+
+### Resolve a port conflict
+
+Change the host-side port in `docker-compose.yml` (e.g. `"15432:5432"`) and update `db_url` to match:
+
+```toml
+db_url = "postgresql+psycopg://bioflow_ai:123456@127.0.0.1:15432/bioflow_ai"
+```
+
+### Use an external PostgreSQL instance
+
+Point `db_url` at the external host and comment out the `postgres-db` service in `docker-compose.yml`.
+
+</Accordion>
+
+<Accordion title="Redis  [persistent.cache]">
+
+### config.toml
+
+```toml
+[persistent.cache]
+llm_cache     = "redis://localhost:6379/0"
+monitor_cache = "redis://localhost:6379/2"
+api_cache     = "redis://localhost:6379/2"
+```
+
+All three share the same Redis instance, separated by database index.
+
+| Key | DB index | Purpose |
+| --- | --- | --- |
+| `llm_cache` | 0 | LLM response cache |
+| `monitor_cache` | 2 | Task progress state |
+| `api_cache` | 2 | API layer cache |
+
+The Celery result backend (index 1) is configured separately under `[celery]`.
+
+### docker-compose.yml
+
+```yaml
+redis-db:
+  ports:
+    - "6379:6379"    # left side → port in Redis URLs
+```
+
+### Resolve a port conflict
+
+Change the host-side port (e.g. `"16379:6379"`) and update **all** Redis URLs in `config.toml`: `llm_cache`, `monitor_cache`, `api_cache`, `[celery].backend`, and `[develop].checkpoint_url`.
+
+### Use an external Redis instance
+
+Update all Redis URLs to the external host. If the instance requires a password, use:
+
+```
+redis://:PASSWORD@HOST:PORT/DB
+```
+
+Comment out the `redis-db` service in `docker-compose.yml`.
+
+</Accordion>
+
+<Accordion title="RabbitMQ  [celery]">
+
+### config.toml
+
+```toml
+[celery]
+broker  = "amqp://bioflow_ai:123456@localhost:5672//"
+backend = "redis://localhost:6379/1"
+```
+
+- `broker` — AMQP connection string. Format: `amqp://USER:PASSWORD@HOST:PORT//`
+- `backend` — Redis database for Celery task results (index 1).
+
+### docker-compose.yml
+
+```yaml
+rabbitmq-db:
+  environment:
+    RABBITMQ_DEFAULT_USER: bioflow_ai    # → user in broker
+    RABBITMQ_DEFAULT_PASS: 123456        # → password in broker
+  ports:
+    - "5672:5672"                        # → port in broker
+    - "15672:15672"                      # Management UI (http://localhost:15672)
+```
+
+### Change the password
+
+RabbitMQ only reads `RABBITMQ_DEFAULT_PASS` on first startup. To change an existing password, wipe the data volume:
+
+```bash
+docker compose down rabbitmq-db
+rm -rf volumes/rabbitmq
+docker compose up -d rabbitmq-db
+```
+
+Then update `broker` in `config.toml`.
+
+### Resolve a port conflict
+
+Change the host-side port in `docker-compose.yml` and update the port in the `broker` URL.
+
+</Accordion>
+
+<Accordion title="Object Storage  [persistent.storage.s3]">
+
+BioFlowAI uses an S3-compatible store (RustFS by default) for user files and analysis outputs.
+
+### config.toml
+
+```toml
+[persistent.storage.s3]
+endpoint       = "http://localhost:9000"
+region         = "us-east-1"
+bucket         = "bioflow-ai"
+access_key     = "minioadmin"
+secret_key     = "minioadmin"
+use_ssl        = false
+presign_expire = 3600
+```
+
+### docker-compose.yml
+
+```yaml
+rustfs:
+  environment:
+    RUSTFS_ACCESS_KEY: minioadmin    # → access_key
+    RUSTFS_SECRET_KEY: minioadmin    # → secret_key
+    RUSTFS_REGION: us-east-1         # → region
+  ports:
+    - "9000:9000"                    # → port in endpoint
+    - "9001:9001"                    # Web console (browser only)
+```
+
+### Change credentials
+
+1. Update `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY` in `docker-compose.yml`.
+2. Sync `access_key` / `secret_key` in `config.toml`.
+3. Recreate: `docker compose up -d --force-recreate rustfs`
+
+### Connect to external S3 or MinIO
+
+Set `endpoint` to the external URL, fill in matching credentials, and comment out the `rustfs` service. Set `use_ssl = true` for HTTPS endpoints (AWS S3, Alibaba OSS, etc.).
+
+</Accordion>
+
+<Accordion title="Milvus  [knowledge_base]">
+
+### config.toml
+
+```toml
+[knowledge_base]
+milvus_url = "http://localhost:19530"
+```
+
+### docker-compose.yml
+
+```yaml
+standalone:          # Milvus single-node
+  ports:
+    - "19530:19530"  # → port in milvus_url
+```
+
+Milvus depends on two other services in `docker-compose.yml`:
+
+- **etcd** — Milvus metadata store
+- **rustfs** — Vector data storage (shared with the application's S3 store)
+
+These are wired together inside the Compose network and require no manual configuration.
+
+If Milvus is deployed on a different server, update `milvus_url` only. The `etcd` and `rustfs` services stay co-located with Milvus on that host.
+
+</Accordion>
+
+</Accordions>
+
+---
+
+## Connectivity checklist
+
+After any infrastructure change, verify each service before starting the application:
+
+```bash
+# PostgreSQL
+psql "postgresql://bioflow_ai:YOUR_PASS@localhost:5432/bioflow_ai" -c "SELECT 1"
+
+# Redis
+redis-cli -h localhost -p 6379 ping
+
+# RabbitMQ
+curl -s http://localhost:15672 | head -1
+
+# Milvus
+curl -s http://localhost:9091/healthz
+
+# RustFS / S3
+curl -s http://localhost:9000/health
+```

@@ -1,0 +1,148 @@
+---
+title: Overview
+description: Common configuration options for config.toml
+---
+
+All runtime behaviour is controlled by a single `config.toml` in the project root. Start from the provided template:
+
+```bash
+cp config.example.toml config.toml
+```
+
+<Cards>
+  <Card title="Infrastructure Services" href="/docs/configuration/infrastructure" description="Configure PostgreSQL, Redis, RabbitMQ, object storage, and Milvus" />
+  <Card title="PDF Parser" href="/docs/configuration/pdf-parser" description="Choose a parser and configure engine-specific settings" />
+  <Card title="Knowledge Base" href="/docs/configuration/knowledge-base" description="Configure the vector store and embedding model" />
+</Cards>
+
+---
+
+## Security `[security]`
+
+```toml
+[security]
+algorithm = "HS256"
+secret_key = "Your key"
+access_token_expire_minutes = 1440
+```
+
+| Key | Required | Description |
+| --- | --- | --- |
+| `secret_key` | **Yes** | JWT signing key. Must be changed before first use. |
+| `access_token_expire_minutes` | No | Login token lifetime in minutes. Default: 1440 (1 day). |
+| `algorithm` | No | JWT algorithm. No need to change. |
+
+Generate a strong key:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+<Callout type="warn">
+  Never use the default `"Your key"` value. Any deployment sharing the same secret key can forge each other's tokens.
+</Callout>
+
+---
+
+## Network `[network]`
+
+```toml
+[network]
+host = "0.0.0.0"
+port = 8000
+use_proxy = false
+proxy_type = "http"
+proxy_host = "localhost"
+proxy_port = 7890
+```
+
+| Key | Description |
+| --- | --- |
+| `host` | Listen address. `0.0.0.0` binds to all interfaces. |
+| `port` | API server port. |
+| `use_proxy` | Set to `true` to route outbound requests through a proxy. |
+| `proxy_type` | `http` or `socks5`. |
+| `proxy_host` / `proxy_port` | Proxy server address and port. |
+
+Enable the proxy when the server needs to reach external LLM APIs or download models through a restricted network.
+
+---
+
+## Storage paths `[persistent.storage]`
+
+```toml
+[persistent.storage]
+storage_path   = "./storage"
+genome_path    = "./storage/genome"
+test_data_path = "./testdata"
+```
+
+| Key | Description |
+| --- | --- |
+| `storage_path` | Root directory for uploaded files and analysis results. |
+| `genome_path` | Directory for indexed reference genomes. |
+| `test_data_path` | Path to test datasets used by built-in examples. |
+
+Relative and absolute paths are both accepted. If the primary disk is low on space, point `storage_path` to a dedicated data volume:
+
+```toml
+storage_path = "/data/bioflow/storage"
+genome_path  = "/data/bioflow/storage/genome"
+```
+
+---
+
+## Compute resource limits `[persistent.resource]`
+
+```toml
+[persistent.resource]
+max_thread = 16
+max_mem    = "64G"
+```
+
+| Key | Description |
+| --- | --- |
+| `max_thread` | Maximum concurrent threads. Recommend setting to the number of CPU cores. |
+| `max_mem` | Memory cap passed to tool containers. Accepts `G` and `M` suffixes. |
+
+---
+
+## Container runtime `[docker]`
+
+```toml
+[docker]
+container   = "docker"
+username    = ""
+password    = ""
+enable_gpu  = false
+gpu_devices = "all"
+```
+
+| Key | Description |
+| --- | --- |
+| `container` | Runtime to use: `docker` or `podman`. |
+| `username` / `password` | Registry credentials for private images. Leave blank for public images. |
+| `enable_gpu` | Pass GPU devices into tool containers. Requires NVIDIA Container Toolkit. |
+| `gpu_devices` | Which GPUs to expose: `"all"` or a comma-separated list such as `"0,1"`. |
+
+---
+
+## Logging `[logger]`
+
+```toml
+[logger]
+level         = "INFO"
+fastapi_level = "INFO"
+boto3_level   = "INFO"
+celery_level  = "INFO"
+log_retention = "1 week"
+log_rotation  = "10 MB"
+```
+
+| Key | Description |
+| --- | --- |
+| `level` | Global log level: `DEBUG`, `INFO`, `WARNING`, or `ERROR`. |
+| `log_retention` | How long to keep log files. Accepts natural-language durations: `"1 week"`, `"30 days"`. |
+| `log_rotation` | Maximum size of a single log file before rotation. |
+
+Temporarily set `level = "DEBUG"` when diagnosing issues. Revert to `"INFO"` for production.

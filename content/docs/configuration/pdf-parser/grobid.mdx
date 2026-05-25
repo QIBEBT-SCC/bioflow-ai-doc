@@ -1,0 +1,32 @@
+---
+title: grobid
+description: Configure the self-hosted Grobid parser
+---
+
+Calls a locally deployed [Grobid](https://github.com/kermitt2/grobid) service. Grobid is specialised for academic paper structure extraction, including headers, references, and sections.
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "grobid"
+
+[pdf_parser.grobid]
+api_url = "http://localhost:8070"
+timeout = 600
+```
+
+## Deploy Grobid
+
+```bash
+docker run -d \
+  --gpus all \
+  -p 8070:8070 \
+  lfoppiano/grobid:0.8.1
+```
+
+Verify:
+
+```bash
+curl http://localhost:8070/api/isalive
+```

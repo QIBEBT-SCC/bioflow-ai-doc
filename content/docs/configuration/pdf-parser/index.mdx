@@ -1,0 +1,38 @@
+---
+title: PDF Parser
+description: Configure the PDF parsing engine used by AI agents to read scientific papers
+---
+
+The PDF parser is used by AI agents to extract content from scientific literature when designing workflows from papers. Configure the engine in `config.toml`:
+
+```toml
+[pdf_parser]
+engine     = "open_mineru"
+batch_size = 5
+```
+
+| Key | Description |
+| --- | --- |
+| `engine` | Parsing backend to use. See options below. |
+| `batch_size` | Number of PDFs to process concurrently. |
+
+---
+
+## Choosing an engine
+
+| Scenario | Recommended engine |
+| --- | --- |
+| Have a GPU server, want best quality | `open_mineru` |
+| No GPU, don't want to self-host | `mineru` or `doc2x` |
+| Don't need PDF analysis at all | `local` |
+| Need structured reference extraction | `grobid` |
+
+## Engine-specific setup
+
+<Cards>
+  <Card title="open_mineru" href="/docs/configuration/pdf-parser/open-mineru" description="Self-hosted MinerU parser for best extraction quality" />
+  <Card title="mineru" href="/docs/configuration/pdf-parser/mineru" description="Hosted MinerU Cloud API" />
+  <Card title="local" href="/docs/configuration/pdf-parser/local" description="Built-in lightweight parser with no external dependencies" />
+  <Card title="doc2x" href="/docs/configuration/pdf-parser/doc2x" description="Doc2X Cloud API parser" />
+  <Card title="grobid" href="/docs/configuration/pdf-parser/grobid" description="Self-hosted academic paper structure extraction" />
+</Cards>

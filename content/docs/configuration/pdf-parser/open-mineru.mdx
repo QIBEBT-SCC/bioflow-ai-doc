@@ -1,0 +1,42 @@
+---
+title: open_mineru
+description: Configure the self-hosted MinerU parser
+---
+
+Calls a locally deployed [MinerU](https://github.com/opendatalab/MinerU) service. This option provides the best parsing quality and requires a GPU server.
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "open_mineru"
+
+[pdf_parser.open_mineru]
+api_url    = "http://localhost:8000"
+server_url = "http://localhost:30000"
+timeout    = 600
+```
+
+| Key | Description |
+| --- | --- |
+| `api_url` | MinerU API gateway address. |
+| `server_url` | MinerU model server address. |
+| `timeout` | Request timeout in seconds. Increase for large PDFs. |
+
+## Deploy MinerU
+
+Pull and start the MinerU service with Docker:
+
+```bash
+docker run -d \
+  --gpus all \
+  -p 8000:8000 \
+  -p 30000:30000 \
+  opendatalab/mineru-service:latest
+```
+
+Verify it is running:
+
+```bash
+curl http://localhost:8000/health
+```
