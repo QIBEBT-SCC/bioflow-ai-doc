@@ -1,0 +1,133 @@
+---
+title: CLI 参考
+description: 用于部署和运维 BioFlowAI 的管理命令
+---
+
+BioFlowAI 提供了由 `uv` 管理的 `bioflow-ai` CLI 入口。所有命令均遵循以下模式：
+
+```bash
+uv run bioflow-ai <command> [options]
+```
+
+在任意命令或子分组后追加 `--help`，即可在终端中打印其用法：
+
+```bash
+uv run bioflow-ai --help
+uv run bioflow-ai init --help
+uv run bioflow-ai init rebuild-index --help
+```
+
+<Callout type="info">
+  本页介绍常规部署与管理命令。开发过程中使用的 `dev` 和 `eval` 子分组请参阅[开发者 CLI](/docs/cli-dev)。
+</Callout>
+
+---
+
+## `api` — 启动 API 服务器
+
+```bash
+uv run bioflow-ai api
+```
+
+使用 Uvicorn 启动 FastAPI 应用。服务器监听 `config.toml` 中 `[network]` 定义的主机与端口，默认值为 `0.0.0.0:8000`。
+
+请在独立终端中保持该进程运行，或使用进程管理器（systemd、supervisord 等）进行管理。
+
+---
+
+## `worker` — 启动 Celery 工作节点
+
+```bash
+uv run bioflow-ai worker
+```
+
+启动 Celery 工作节点，用于获取并执行工作流任务。工作节点会连接到 `config.toml` 中 `[celery]` 配置的 RabbitMQ（broker）和 Redis（backend）。
+
+API 服务器和工作节点必须同时运行，工作流执行才能正常工作。
+
+---
+
+## `init` — 初始化与数据库管理
+
+```bash
+uv run bioflow-ai init <subcommand>
+```
+
+### `system-init`
+
+```bash
+uv run bioflow-ai init system-init
+```
+
+完整的一次性初始化。按顺序执行以下步骤：
+
+1. 创建默认管理员账户（若已存在任何用户则跳过）
+2. 从 `presets/images.parquet` 导入容器镜像记录
+3. 从 `presets/tool_docs.parquet` 导入工具文档
+4. 从 `presets/tools.parquet` 导入工具节点定义
+5. 重建所有 Milvus 向量索引
+
+如果本地找不到预设文件，将自动从项目的 Hugging Face bucket 下载。
+
+全新安装后请**只运行一次**。增量更新请参阅 [`init-db`](#init-db) 和 [`rebuild-index`](#rebuild-index)。
+
+---
+
+### `create-admin`
+
+```bash
+uv run bioflow-ai init create-admin
+```
+
+仅在用户表为空时创建默认管理员账户（`admin@email.com` / `admin`）。可安全地在现有安装中调用；如果用户已存在，该命令会直接退出且不会做任何更改。
+
+<Callout type="warn">
+  首次登录后请立即修改默认密码。
+</Callout>
+
+---
+
+### `init-db`
+
+```bash
+uv run bioflow-ai init init-db [OPTIONS]
+```
+
+将预设数据记录导入数据库，并重建对应的 Milvus 向量索引。
+
+| 选项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `-d, --databases` | `all` | 目标数据集：`all`、`image`、`tool` 或 `doc`。 |
+| `--drop-old` | `false` | 导入前删除现有记录。不使用该标志时，新记录将追加写入。 |
+
+```bash
+# 重新导入所有内容，并替换现有记录
+uv run bioflow-ai init init-db --drop-old
+
+# 仅重新导入工具定义，保留镜像和文档不变
+uv run bioflow-ai init init-db -d tool --drop-old
+```
+
+---
+
+### `rebuild-index`
+
+```bash
+uv run bioflow-ai init rebuild-index [OPTIONS]
+```
+
+基于当前数据库内容删除并重建 Milvus 向量索引，不修改关系型数据库记录。
+
+| 选项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `-c, --collections` | `all` | 目标集合：`all`、`tool`、`image` 或 `processor`。 |
+
+```bash
+# 重建所有集合
+uv run bioflow-ai init rebuild-index
+
+# 仅重建工具集合
+uv run bioflow-ai init rebuild-index -c tool
+```
+
+在手动编辑工具或镜像记录后，或需要从损坏的向量索引中恢复时，请使用此命令。

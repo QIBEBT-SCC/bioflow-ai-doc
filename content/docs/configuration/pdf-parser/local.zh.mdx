@@ -1,0 +1,15 @@
+---
+title: local
+description: 配置内置轻量解析器
+---
+
+使用内置解析器。无需额外设置或 API key。与 MinerU 相比，解析准确率有限。
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "local"
+```
+
+无需额外配置段。当您不需要 AI 论文分析，或偏好零依赖运行时，这是最佳选项。

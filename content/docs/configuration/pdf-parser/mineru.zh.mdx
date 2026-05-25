@@ -1,0 +1,20 @@
+---
+title: mineru
+description: 配置 MinerU Cloud API 解析器
+---
+
+调用托管版 [MinerU cloud API](https://mineru.net)。无需本地部署，但需要 API key。
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "mineru"
+
+[pdf_parser.mineru]
+api_url = "https://api.mineru.app"
+api_key = ""
+timeout = 600
+```
+
+在 `api_key` 中填入您的 MinerU API key。请在 [mineru.net](https://mineru.net) 注册以获取。

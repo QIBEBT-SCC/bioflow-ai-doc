@@ -1,0 +1,42 @@
+---
+title: open_mineru
+description: 配置自托管 MinerU 解析器
+---
+
+调用本地部署的 [MinerU](https://github.com/opendatalab/MinerU) 服务。此选项提供最佳解析质量，并需要 GPU 服务器。
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "open_mineru"
+
+[pdf_parser.open_mineru]
+api_url    = "http://localhost:8000"
+server_url = "http://localhost:30000"
+timeout    = 600
+```
+
+| Key | 说明 |
+| --- | --- |
+| `api_url` | MinerU API 网关地址。 |
+| `server_url` | MinerU 模型服务器地址。 |
+| `timeout` | 请求超时时间，单位为秒。处理大型 PDF 时请增大该值。 |
+
+## 部署 MinerU
+
+使用 Docker 拉取并启动 MinerU 服务：
+
+```bash
+docker run -d \
+  --gpus all \
+  -p 8000:8000 \
+  -p 30000:30000 \
+  opendatalab/mineru-service:latest
+```
+
+验证服务是否正在运行：
+
+```bash
+curl http://localhost:8000/health
+```

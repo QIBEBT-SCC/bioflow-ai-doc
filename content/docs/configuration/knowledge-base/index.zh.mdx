@@ -1,0 +1,34 @@
+---
+title: 知识库
+description: 配置用于 AI 辅助工具发现的向量存储和嵌入模型
+---
+
+知识库会索引工具文档和参数说明，为 AI agent 的工具发现和工作流设计功能提供支持。它需要一个运行中的 Milvus 实例（通过 `docker-compose.yml` 自动启动）和一个嵌入模型。
+
+```toml
+[knowledge_base]
+milvus_url      = "http://localhost:19530"
+use_local_model = false
+```
+
+| Key | 说明 |
+| --- | --- |
+| `milvus_url` | Milvus 向量存储地址。默认指向内置 Docker 服务。 |
+| `use_local_model` | `false` = 远程 API（默认），`true` = 本地模型推理。 |
+
+---
+
+## 选择模式
+
+| 场景 | 推荐模式 |
+| --- | --- |
+| 快速设置，无需 GPU | 远程 API |
+| 离线 / 私有网络 | 本地模型 |
+| 数据不能离开服务器 | 本地模型 |
+| 低延迟、高吞吐索引 | 本地模型（GPU） |
+
+## 下一步
+
+<Cards>
+  <Card title="嵌入模型" href="/docs/configuration/knowledge-base/embedding-model" description="配置远程 API 或本地嵌入推理" />
+</Cards>

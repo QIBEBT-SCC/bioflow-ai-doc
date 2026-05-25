@@ -1,0 +1,32 @@
+---
+title: grobid
+description: 配置自托管 Grobid 解析器
+---
+
+调用本地部署的 [Grobid](https://github.com/kermitt2/grobid) 服务。Grobid 专用于学术论文结构提取，包括标题信息、参考文献和章节。
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "grobid"
+
+[pdf_parser.grobid]
+api_url = "http://localhost:8070"
+timeout = 600
+```
+
+## 部署 Grobid
+
+```bash
+docker run -d \
+  --gpus all \
+  -p 8070:8070 \
+  lfoppiano/grobid:0.8.1
+```
+
+验证：
+
+```bash
+curl http://localhost:8070/api/isalive
+```

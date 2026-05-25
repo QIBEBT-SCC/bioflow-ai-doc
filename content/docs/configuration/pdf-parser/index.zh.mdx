@@ -1,0 +1,38 @@
+---
+title: PDF 解析器
+description: 配置 AI agent 用于读取科研论文的 PDF 解析引擎
+---
+
+PDF 解析器用于在根据论文设计工作流时，帮助 AI agent 从科研文献中提取内容。请在 `config.toml` 中配置引擎：
+
+```toml
+[pdf_parser]
+engine     = "open_mineru"
+batch_size = 5
+```
+
+| Key | 说明 |
+| --- | --- |
+| `engine` | 要使用的解析后端。可选项见下文。 |
+| `batch_size` | 并发处理的 PDF 数量。 |
+
+---
+
+## 选择引擎
+
+| 场景 | 推荐引擎 |
+| --- | --- |
+| 有 GPU 服务器，希望获得最佳质量 | `open_mineru` |
+| 没有 GPU，且不想自行托管 | `mineru` 或 `doc2x` |
+| 完全不需要 PDF 分析 | `local` |
+| 需要结构化参考文献提取 | `grobid` |
+
+## 引擎专属设置
+
+<Cards>
+  <Card title="open_mineru" href="/docs/configuration/pdf-parser/open-mineru" description="自托管 MinerU 解析器，提供最佳提取质量" />
+  <Card title="mineru" href="/docs/configuration/pdf-parser/mineru" description="托管版 MinerU Cloud API" />
+  <Card title="local" href="/docs/configuration/pdf-parser/local" description="内置轻量解析器，无外部依赖" />
+  <Card title="doc2x" href="/docs/configuration/pdf-parser/doc2x" description="Doc2X Cloud API 解析器" />
+  <Card title="grobid" href="/docs/configuration/pdf-parser/grobid" description="自托管学术论文结构提取" />
+</Cards>

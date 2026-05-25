@@ -1,0 +1,125 @@
+---
+title: 什么是 BioFlowAI
+description: BioFlowAI — 基于图的智能生物信息学分析平台
+icon: CircleQuestionMark
+---
+
+## 什么是 BioFlowAI？
+
+BioFlowAI 是一个智能生物信息学工作流平台，帮助研究人员设计、执行和监控复杂的生物数据分析流程，而无需编写代码。它围绕**可视化节点式编辑器**构建，结合了容器化工具执行、AI 驱动的工作流设计，以及支持多用户协作的环境。
+
+无论您是在处理 RNA-seq reads、比对基因组，还是复现已发表的分析，BioFlowAI 都提供了从原始测序数据到可解释结果所需的基础设施。
+
+## 核心功能
+
+### 可视化工作流编辑器
+
+工作流通过拖拽式画布（React Flow）构建为**有向无环图（DAG）**。图中的每个节点代表分析中的一个步骤，可以是生物信息学工具、数据资源、文件操作或自定义脚本。节点之间的边定义数据依赖关系，并决定执行顺序。
+
+支持的节点类型：
+
+| 类型 | 说明 |
+| --- | --- |
+| **Tool** | 在容器内执行的生物信息学工具 |
+| **Resource** | 输入数据：样本文件、参考基因组、数据库 |
+| **Processor** | 内置文件操作（复制、压缩等） |
+| **Code** | 用户定义的 Bash 脚本 |
+| **Value** | 内联字符串常量 |
+
+### AI 驱动的工作流设计
+
+BioFlowAI 内置 LLM agent 系统，可帮助自动设计工作流。当前支持三种模式：
+
+- **Autonomous Design** — 使用自然语言描述您的分析目标；AI 会提出并构建完整工作流。
+- **Tool Expansion** — 指定您想使用的工具；AI 会构建其周边流程（QC、比对、下游步骤）。
+- **Literature Reproduction** — 上传论文；AI 会提取方法部分并重建分析工作流。
+
+该 agent 会搜索工具知识库（由 Milvus 向量搜索提供支持）和 Web，以识别合适的工具、版本和参数。
+
+### 容器化工具执行
+
+每个工具都在隔离的 **Docker 或 Podman 容器**中运行。这意味着：
+
+- 工具之间不会发生依赖冲突
+- 可在不同环境中实现可复现执行
+- 支持 GPU passthrough 以加速任务
+
+输入和输出文件路径会自动解析，挂载冲突也会被透明处理。
+
+### 灵活的 LLM 后端
+
+BioFlowAI 通过统一的抽象层支持多个 LLM 提供商。每个提供商都可以分配给特定角色：
+
+| 角色 | 用途 |
+| --- | --- |
+| `AGENT` | 工作流设计与规划 |
+| `CHAT` | 通用用户交互 |
+| `CODING` | 脚本生成 |
+| `VISION` | 图像分析 |
+| `LONG_CONTEXT` | 长文档分析 |
+| `HIGH_PERFORMANCE` | 复杂推理任务 |
+
+支持的提供商：**Anthropic (Claude)**、**OpenAI (GPT)**、**Google (Gemini)**、**DeepSeek**。
+
+### 项目与样本管理
+
+BioFlowAI 围绕三个概念组织工作：
+
+- **Projects** — 对相关样本和工作流运行进行分组。
+- **Samples** — 单个生物数据集（测序 reads、质谱、图像等）。
+- **Workflows** — 可复用的图模板，可导入任意项目。
+
+在包含 N 个样本的项目上运行工作流时，会创建 N 个独立的 **RunInstances**，并分别进行跟踪。
+
+### 实时监控
+
+任务进度会记录在 Redis 中，并通过 API 暴露。每个 **TaskInstance** 都会报告其当前状态（`pending`、`running`、`success`、`failed`）、日志和输出文件位置。失败的任务可以单独重试。
+
+### 知识库
+
+向量存储（Milvus）会索引工具文档、参数说明和使用示例。这为 AI agent 的工具发现提供支持，也支持 UI 中基于搜索辅助的参数填写。
+
+## 架构概览
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Frontend (React)                  │
+│              Visual Workflow Editor (React Flow)     │
+└────────────────────────┬────────────────────────────┘
+                         │ REST API
+┌────────────────────────▼────────────────────────────┐
+│                 Backend (FastAPI)                    │
+│   Auth · Projects · Workflows · Tools · Chat · ...   │
+└──────┬────────────────────────────────┬─────────────┘
+       │ Celery tasks                   │ LangGraph agents
+┌──────▼──────────┐           ┌─────────▼─────────────┐
+│  Task Workers   │           │     LLM Agent System   │
+│ (Docker/Podman) │           │  (Workflow Designer,   │
+│                 │           │   Tool Creator, etc.)  │
+└──────┬──────────┘           └───────────────────────┘
+       │
+┌──────▼─────────────────────────────────────────────┐
+│              Infrastructure                         │
+│  PostgreSQL · Redis · RabbitMQ · Milvus · MinIO     │
+└────────────────────────────────────────────────────┘
+```
+
+## 技术栈
+
+| 层级 | 技术 |
+| --- | --- |
+| Backend | FastAPI, Python 3.12+, SQLModel |
+| Task Queue | Celery, RabbitMQ |
+| Database | PostgreSQL |
+| Cache / State | Redis |
+| Vector Store | Milvus |
+| Object Storage | MinIO / RustFS (S3-compatible) |
+| Containers | Docker / Podman |
+| AI Framework | LangChain, LangGraph |
+| Package Manager | uv |
+
+## 后续步骤
+
+<Cards>
+  <Card title="快速开始" href="/docs/introduction/quick-start" description="使用 Docker Compose 部署 BioFlowAI" />
+</Cards>

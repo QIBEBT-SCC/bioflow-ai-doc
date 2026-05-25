@@ -1,0 +1,19 @@
+---
+title: doc2x
+description: 配置 Doc2X Cloud API 解析器
+---
+
+调用 [Doc2X](https://doc2x.noedgeai.com) 云端 API 进行 PDF 解析。
+
+## config.toml
+
+```toml
+[pdf_parser]
+engine = "doc2x"
+
+[pdf_parser.doc2x]
+api_key = ""
+timeout = 600
+```
+
+请在 [doc2x.noedgeai.com](https://doc2x.noedgeai.com) 注册以获取 API key。

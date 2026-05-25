@@ -1,0 +1,185 @@
+---
+title: 开发者 CLI
+description: 面向贡献者和维护者的开发与评估命令
+---
+
+<Callout type="warn">
+  这些命令仅供贡献者和维护者使用。普通用户无需使用。
+</Callout>
+
+`dev` 和 `eval` 子分组都依赖默认不会安装的开发依赖。使用本页任意命令前，请先安装这些依赖：
+
+```bash
+uv sync --dev
+```
+
+---
+
+## `dev` — 工具节点创建流水线
+
+```bash
+uv run bioflow-ai dev <subcommand>
+```
+
+这些命令用于驱动自动化流水线，通过 AI agent 从容器镜像生成工作流节点定义。流水线状态会持久化到本地 DuckDB 文件 `presets/build/develop.db`。
+
+---
+
+### `create-tools`
+
+```bash
+uv run bioflow-ai dev create-tools [--index INDEX]
+```
+
+对 `tool_functions` 表中所有未处理条目运行 AI 工具创建 agent。对于每个条目，agent 会检查容器镜像、运行其帮助命令，并生成完整配置的工具节点保存到数据库。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--index INDEX` | 仅处理该索引处的条目。省略时处理所有待处理条目。 |
+
+---
+
+### `search`
+
+```bash
+uv run bioflow-ai dev search --name NAME
+```
+
+按工具名称搜索 `tool_functions`，并使用 Rich 格式打印匹配记录。适用于在创建前后检查特定条目的状态。
+
+---
+
+### `read-interrupt`
+
+```bash
+uv run bioflow-ai dev read-interrupt INDEX
+```
+
+读取并显示索引为 `INDEX` 的 agent 运行中断载荷。可用于在决定如何恢复运行前，了解工具创建过程暂停的原因。
+
+---
+
+### `continue-run`
+
+```bash
+uv run bioflow-ai dev continue-run INDEX [OPTIONS]
+```
+
+恢复一次被中断的 agent 运行。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--approve` | 以隐式批准恢复（等同于用户回答 "yes"）。 |
+| `-m, --message TEXT` | 通过向 agent 发送指定消息来恢复。 |
+
+```bash
+# 批准中断并继续
+uv run bioflow-ai dev continue-run 42 --approve
+
+# 发送修正消息
+uv run bioflow-ai dev continue-run 42 -m "Use --threads instead of -p for this tool."
+```
+
+---
+
+### `check`
+
+```bash
+uv run bioflow-ai dev check [OPTIONS]
+```
+
+扫描 DuckDB 状态中的孤立记录（对应 `tool_node` 已不在 PostgreSQL 中存在的条目），并重置这些记录，使其可以重新处理。
+
+| 选项 | 说明 |
+| --- | --- |
+| `--clean-interrupted` | 同时重置处于 `interrupted` 状态的记录。 |
+| `--dry-run` | 只打印将被重置的内容，不实际做任何更改。 |
+
+---
+
+### `delete-prebuild-tool`
+
+```bash
+uv run bioflow-ai dev delete-prebuild-tool INDEX [INDEX ...]
+```
+
+按索引删除一个或多个工具记录，并清理 DuckDB 行、Redis 中的 agent checkpoint、PostgreSQL 中的工具节点以及磁盘上的运行输出目录。
+
+```bash
+# 删除单条记录
+uv run bioflow-ai dev delete-prebuild-tool 61
+
+# 一次删除多条记录
+uv run bioflow-ai dev delete-prebuild-tool 61 62 63 65
+```
+
+---
+
+### `export`
+
+```bash
+uv run bioflow-ai dev export [OPTIONS]
+```
+
+将数据库表导出为 `presets/` 下的 Parquet 文件，供 `uv run bioflow-ai init init-db` 作为输入使用。
+
+| 选项 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--db` | `images docs tools` | 要导出的数据集。可指定多次。可选值：`images`、`docs`、`tools`。 |
+| `--upload` | `false` | 导出后将生成的 Parquet 文件上传到 Hugging Face prebuild bucket。 |
+
+```bash
+# 在本地导出所有内容
+uv run bioflow-ai dev export
+
+# 仅导出工具定义并上传到 Hugging Face
+uv run bioflow-ai dev export --db tools --upload
+```
+
+---
+
+### `statistic`
+
+```bash
+uv run bioflow-ai dev statistic
+```
+
+打印工具创建流水线的摘要表：总记录数、已处理数量、成功/失败明细，以及最新的中断记录。
+
+---
+
+## `eval` — Agent 评估
+
+```bash
+uv run bioflow-ai eval <subcommand>
+```
+
+---
+
+### `eval wf`
+
+```bash
+uv run bioflow-ai eval wf TASK_FILE [OPTIONS]
+```
+
+在任务描述文件上端到端运行工作流设计 agent，以验证其能否生成有效工作流。适用于基准测试 prompt 变更或模型替换。
+
+| 参数 / 选项 | 说明 |
+| --- | --- |
+| `TASK_FILE` | 包含任务 prompt 的纯文本文件路径。 |
+| `-p, --paper PATH` | 可选的 PDF 论文，用作额外上下文。 |
+| `-t, --thread-id ID` | Checkpoint thread ID。复用同一 ID 可恢复之前的运行。 |
+| `--drop-old` | 启动前删除该 thread ID 对应的现有 checkpoint。 |
+
+```bash
+# 基础评估
+uv run bioflow-ai eval wf tasks/rna_seq.txt --thread-id eval-rna-001
+
+# 附带参考论文，并从头开始
+uv run bioflow-ai eval wf tasks/rna_seq.txt \
+  --paper papers/2024_method.pdf \
+  --thread-id eval-rna-002 \
+  --drop-old
+```
+
+结果（project ID、workflow UID、输出路径）会持久化到 `presets/build/evaluate.db`，便于跨运行查看。

@@ -1,0 +1,148 @@
+---
+title: 概览
+description: config.toml 的常用配置选项
+---
+
+所有运行时行为均由项目根目录下的单个 `config.toml` 控制。请从提供的模板开始：
+
+```bash
+cp config.example.toml config.toml
+```
+
+<Cards>
+  <Card title="基础设施服务" href="/docs/configuration/infrastructure" description="配置 PostgreSQL、Redis、RabbitMQ、对象存储和 Milvus" />
+  <Card title="PDF 解析器" href="/docs/configuration/pdf-parser" description="选择解析器并配置引擎专属设置" />
+  <Card title="知识库" href="/docs/configuration/knowledge-base" description="配置向量存储和嵌入模型" />
+</Cards>
+
+---
+
+## 安全 `[security]`
+
+```toml
+[security]
+algorithm = "HS256"
+secret_key = "Your key"
+access_token_expire_minutes = 1440
+```
+
+| Key | 必填 | 说明 |
+| --- | --- | --- |
+| `secret_key` | **是** | JWT 签名密钥。首次使用前必须修改。 |
+| `access_token_expire_minutes` | 否 | 登录令牌有效期，单位为分钟。默认值：1440（1 天）。 |
+| `algorithm` | 否 | JWT 算法。通常无需修改。 |
+
+生成强密钥：
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"
+```
+
+<Callout type="warn">
+  切勿使用默认的 `"Your key"` 值。任何使用相同密钥的部署都可以伪造彼此的令牌。
+</Callout>
+
+---
+
+## 网络 `[network]`
+
+```toml
+[network]
+host = "0.0.0.0"
+port = 8000
+use_proxy = false
+proxy_type = "http"
+proxy_host = "localhost"
+proxy_port = 7890
+```
+
+| Key | 说明 |
+| --- | --- |
+| `host` | 监听地址。`0.0.0.0` 绑定所有网络接口。 |
+| `port` | API 服务器端口。 |
+| `use_proxy` | 设为 `true` 后，通过代理转发出站请求。 |
+| `proxy_type` | `http` 或 `socks5`。 |
+| `proxy_host` / `proxy_port` | 代理服务器地址和端口。 |
+
+当服务器需要在受限网络中访问外部 LLM API 或下载模型时，请启用代理。
+
+---
+
+## 存储路径 `[persistent.storage]`
+
+```toml
+[persistent.storage]
+storage_path   = "./storage"
+genome_path    = "./storage/genome"
+test_data_path = "./testdata"
+```
+
+| Key | 说明 |
+| --- | --- |
+| `storage_path` | 上传文件和分析结果的根目录。 |
+| `genome_path` | 已索引参考基因组的目录。 |
+| `test_data_path` | 内置示例使用的测试数据集路径。 |
+
+相对路径和绝对路径均可使用。若主磁盘空间不足，请将 `storage_path` 指向专用数据卷：
+
+```toml
+storage_path = "/data/bioflow/storage"
+genome_path  = "/data/bioflow/storage/genome"
+```
+
+---
+
+## 计算资源限制 `[persistent.resource]`
+
+```toml
+[persistent.resource]
+max_thread = 16
+max_mem    = "64G"
+```
+
+| Key | 说明 |
+| --- | --- |
+| `max_thread` | 最大并发线程数。建议设为 CPU 核心数。 |
+| `max_mem` | 传递给工具容器的内存上限。支持 `G` 和 `M` 后缀。 |
+
+---
+
+## 容器运行时 `[docker]`
+
+```toml
+[docker]
+container   = "docker"
+username    = ""
+password    = ""
+enable_gpu  = false
+gpu_devices = "all"
+```
+
+| Key | 说明 |
+| --- | --- |
+| `container` | 使用的运行时：`docker` 或 `podman`。 |
+| `username` / `password` | 私有镜像仓库凭据。公共镜像可留空。 |
+| `enable_gpu` | 将 GPU 设备传入工具容器。需要 NVIDIA Container Toolkit。 |
+| `gpu_devices` | 要暴露的 GPU：`"all"` 或逗号分隔列表，例如 `"0,1"`。 |
+
+---
+
+## 日志 `[logger]`
+
+```toml
+[logger]
+level         = "INFO"
+fastapi_level = "INFO"
+boto3_level   = "INFO"
+celery_level  = "INFO"
+log_retention = "1 week"
+log_rotation  = "10 MB"
+```
+
+| Key | 说明 |
+| --- | --- |
+| `level` | 全局日志级别：`DEBUG`、`INFO`、`WARNING` 或 `ERROR`。 |
+| `log_retention` | 日志文件保留时长。支持自然语言时长：`"1 week"`、`"30 days"`。 |
+| `log_rotation` | 单个日志文件轮转前的最大大小。 |
+
+排查问题时可临时设置 `level = "DEBUG"`。生产环境请恢复为 `"INFO"`。

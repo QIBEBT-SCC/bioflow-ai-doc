@@ -1,0 +1,251 @@
+---
+title: 基础设施服务
+description: 配置 PostgreSQL、Redis、RabbitMQ、对象存储和 Milvus
+---
+
+以下服务均由 `docker-compose.yml` 管理。默认本地部署**无需修改**，`config.example.toml` 与 `docker-compose.yml` 已保持一致。
+
+仅当您需要修改密码、解决端口冲突，或用外部服务替换内置服务时，才需要继续阅读。
+
+<Callout type="warn">
+  `config.toml` 和 `docker-compose.yml` 必须始终保持同步。只在一处修改端口或密码而未更新另一处，会导致应用无法连接。
+</Callout>
+
+---
+
+import { Accordion, Accordions } from 'fumadocs-ui/components/accordion';
+
+<Accordions>
+
+<Accordion title="PostgreSQL  [persistent.database]">
+
+### config.toml
+
+```toml
+[persistent.database]
+db_url = "postgresql+psycopg://bioflow_ai:123456@127.0.0.1:5432/bioflow_ai"
+```
+
+URL 格式：`postgresql+psycopg://USER:PASSWORD@HOST:PORT/DBNAME`
+
+### docker-compose.yml
+
+```yaml
+postgres-db:
+  environment:
+    POSTGRES_USER: bioflow_ai     # → db_url 中的 user
+    POSTGRES_PASSWORD: 123456     # → db_url 中的 password
+    POSTGRES_DB: bioflow_ai       # → db_url 中的 dbname
+  ports:
+    - "5432:5432"                 # 左侧 → db_url 中的 port
+```
+
+### 修改密码
+
+1. 更新 `docker-compose.yml` 中的 `POSTGRES_PASSWORD`。
+2. 更新 `config.toml` 中 `db_url` 的密码字段。
+3. 重新创建容器：
+   ```bash
+   docker compose up -d --force-recreate postgres-db
+   ```
+
+<Callout type="info">
+  PostgreSQL 只会在首次初始化时读取 `POSTGRES_PASSWORD`。如果数据卷已经存在，请在运行中的数据库内手动更新密码，或删除数据卷后重新初始化。
+</Callout>
+
+### 解决端口冲突
+
+修改 `docker-compose.yml` 中的主机侧端口（例如 `"15432:5432"`），并同步更新 `db_url`：
+
+```toml
+db_url = "postgresql+psycopg://bioflow_ai:123456@127.0.0.1:15432/bioflow_ai"
+```
+
+### 使用外部 PostgreSQL 实例
+
+将 `db_url` 指向外部主机，并在 `docker-compose.yml` 中注释掉 `postgres-db` 服务。
+
+</Accordion>
+
+<Accordion title="Redis  [persistent.cache]">
+
+### config.toml
+
+```toml
+[persistent.cache]
+llm_cache     = "redis://localhost:6379/0"
+monitor_cache = "redis://localhost:6379/2"
+api_cache     = "redis://localhost:6379/2"
+```
+
+三者共享同一个 Redis 实例，并通过数据库索引隔离。
+
+| Key | DB 索引 | 用途 |
+| --- | --- | --- |
+| `llm_cache` | 0 | LLM 响应缓存 |
+| `monitor_cache` | 2 | 任务进度状态 |
+| `api_cache` | 2 | API 层缓存 |
+
+Celery 结果后端（索引 1）在 `[celery]` 下单独配置。
+
+### docker-compose.yml
+
+```yaml
+redis-db:
+  ports:
+    - "6379:6379"    # 左侧 → Redis URL 中的 port
+```
+
+### 解决端口冲突
+
+修改主机侧端口（例如 `"16379:6379"`），并更新 `config.toml` 中**所有** Redis URL：`llm_cache`、`monitor_cache`、`api_cache`、`[celery].backend` 和 `[develop].checkpoint_url`。
+
+### 使用外部 Redis 实例
+
+将所有 Redis URL 更新为外部主机。如果实例需要密码，请使用：
+
+```
+redis://:PASSWORD@HOST:PORT/DB
+```
+
+在 `docker-compose.yml` 中注释掉 `redis-db` 服务。
+
+</Accordion>
+
+<Accordion title="RabbitMQ  [celery]">
+
+### config.toml
+
+```toml
+[celery]
+broker  = "amqp://bioflow_ai:123456@localhost:5672//"
+backend = "redis://localhost:6379/1"
+```
+
+- `broker` — AMQP 连接字符串。格式：`amqp://USER:PASSWORD@HOST:PORT//`
+- `backend` — Celery 任务结果使用的 Redis 数据库（索引 1）。
+
+### docker-compose.yml
+
+```yaml
+rabbitmq-db:
+  environment:
+    RABBITMQ_DEFAULT_USER: bioflow_ai    # → broker 中的 user
+    RABBITMQ_DEFAULT_PASS: 123456        # → broker 中的 password
+  ports:
+    - "5672:5672"                        # → broker 中的 port
+    - "15672:15672"                      # 管理界面 (http://localhost:15672)
+```
+
+### 修改密码
+
+RabbitMQ 只会在首次启动时读取 `RABBITMQ_DEFAULT_PASS`。要修改已有密码，请清空数据卷：
+
+```bash
+docker compose down rabbitmq-db
+rm -rf volumes/rabbitmq
+docker compose up -d rabbitmq-db
+```
+
+然后更新 `config.toml` 中的 `broker`。
+
+### 解决端口冲突
+
+修改 `docker-compose.yml` 中的主机侧端口，并更新 `broker` URL 中的端口。
+
+</Accordion>
+
+<Accordion title="对象存储  [persistent.storage.s3]">
+
+BioFlowAI 使用兼容 S3 的存储（默认 RustFS）保存用户文件和分析输出。
+
+### config.toml
+
+```toml
+[persistent.storage.s3]
+endpoint       = "http://localhost:9000"
+region         = "us-east-1"
+bucket         = "bioflow-ai"
+access_key     = "minioadmin"
+secret_key     = "minioadmin"
+use_ssl        = false
+presign_expire = 3600
+```
+
+### docker-compose.yml
+
+```yaml
+rustfs:
+  environment:
+    RUSTFS_ACCESS_KEY: minioadmin    # → access_key
+    RUSTFS_SECRET_KEY: minioadmin    # → secret_key
+    RUSTFS_REGION: us-east-1         # → region
+  ports:
+    - "9000:9000"                    # → endpoint 中的 port
+    - "9001:9001"                    # Web 控制台（仅浏览器）
+```
+
+### 修改凭据
+
+1. 更新 `docker-compose.yml` 中的 `RUSTFS_ACCESS_KEY` / `RUSTFS_SECRET_KEY`。
+2. 同步 `config.toml` 中的 `access_key` / `secret_key`。
+3. 重新创建：`docker compose up -d --force-recreate rustfs`
+
+### 连接外部 S3 或 MinIO
+
+将 `endpoint` 设为外部 URL，填写匹配的凭据，并注释掉 `rustfs` 服务。HTTPS 端点（AWS S3、Alibaba OSS 等）请设置 `use_ssl = true`。
+
+</Accordion>
+
+<Accordion title="Milvus  [knowledge_base]">
+
+### config.toml
+
+```toml
+[knowledge_base]
+milvus_url = "http://localhost:19530"
+```
+
+### docker-compose.yml
+
+```yaml
+standalone:          # Milvus 单节点
+  ports:
+    - "19530:19530"  # → milvus_url 中的 port
+```
+
+Milvus 依赖 `docker-compose.yml` 中的另外两个服务：
+
+- **etcd** — Milvus 元数据存储
+- **rustfs** — 向量数据存储（与应用的 S3 存储共享）
+
+它们已在 Compose 网络内完成连接，无需手动配置。
+
+如果 Milvus 部署在另一台服务器上，只需更新 `milvus_url`。`etcd` 和 `rustfs` 服务应与该主机上的 Milvus 保持同机部署。
+
+</Accordion>
+
+</Accordions>
+
+---
+
+## 连接检查清单
+
+每次修改基础设施后，请在启动应用前验证各服务：
+
+```bash
+# PostgreSQL
+psql "postgresql://bioflow_ai:YOUR_PASS@localhost:5432/bioflow_ai" -c "SELECT 1"
+
+# Redis
+redis-cli -h localhost -p 6379 ping
+
+# RabbitMQ
+curl -s http://localhost:15672 | head -1
+
+# Milvus
+curl -s http://localhost:9091/healthz
+
+# RustFS / S3
+curl -s http://localhost:9000/health
+```
