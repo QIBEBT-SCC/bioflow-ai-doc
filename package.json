@@ -10,6 +10,8 @@
     "postinstall": "fumadocs-mdx"
   },
   "dependencies": {
+    "@fumadocs/language": "^0.0.1",
+    "@orama/tokenizers": "^3.1.18",
     "@radix-ui/react-accordion": "^1.2.12",
     "class-variance-authority": "^0.7.1",
     "fumadocs-core": "16.9.1",

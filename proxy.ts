@@ -1,6 +1,11 @@
-import { NextRequest, NextResponse } from 'next/server';
+import type { NextFetchEvent, NextRequest } from 'next/server';
+import { NextResponse } from 'next/server';
+import { createI18nMiddleware } from 'fumadocs-core/i18n/middleware';
 import { isMarkdownPreferred, rewritePath } from 'fumadocs-core/negotiation';
+import { i18n } from '@/lib/i18n';
 import { docsContentRoute, docsRoute } from '@/lib/shared';
+
+const i18nMiddleware = createI18nMiddleware(i18n);
 
 const { rewrite: rewriteDocs } = rewritePath(
   `${docsRoute}{/*path}`,
@@ -11,19 +16,42 @@ const { rewrite: rewriteSuffix } = rewritePath(
   `${docsContentRoute}{/*path}/content.md`,
 );
 
-export default function proxy(request: NextRequest) {
-  const result = rewriteSuffix(request.nextUrl.pathname);
+function removeLocalePrefix(pathname: string) {
+  for (const lang of i18n.languages) {
+    const prefix = `/${lang}`;
+
+    if (pathname === prefix) return '/';
+    if (pathname.startsWith(`${prefix}/`)) return pathname.slice(prefix.length);
+  }
+
+  return pathname;
+}
+
+function rewriteMarkdownRequest(request: NextRequest) {
+  const pathname = removeLocalePrefix(request.nextUrl.pathname);
+  const result = rewriteSuffix(pathname);
+
   if (result) {
     return NextResponse.rewrite(new URL(result, request.nextUrl));
   }
 
   if (isMarkdownPreferred(request)) {
-    const result = rewriteDocs(request.nextUrl.pathname);
+    const result = rewriteDocs(pathname);
 
     if (result) {
       return NextResponse.rewrite(new URL(result, request.nextUrl));
     }
   }
 
-  return NextResponse.next();
+  return null;
 }
+
+export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  return rewriteMarkdownRequest(request) ?? i18nMiddleware(request, event);
+}
+
+export const config = {
+  matcher: [
+    '/((?!api|_next/static|_next/image|favicon.ico|llms.txt|llms-full.txt|llms.mdx|og).*)',
+  ],
+};

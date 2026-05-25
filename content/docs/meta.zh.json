@@ -1,0 +1,11 @@
+{
+  "title": "BioFlowAI",
+  "pages": [
+    "---简介---",
+    "...introduction",
+    "---配置---",
+    "...configuration",
+    "---CLI---",
+    "...cli"
+  ]
+}
