@@ -1,0 +1,185 @@
+---
+title: Installation
+description: Deploy BioFlowAI on your own server using Docker Compose
+---
+
+This guide walks through the default installation path using Docker and the `uv` package manager. The entire stack — database, message broker, vector store, object storage, and web UI — is managed via a single `docker-compose.yml`.
+
+## Prerequisites
+
+| Requirement | Notes |
+| --- | --- |
+| **Python 3.12+** | Required by the backend |
+| **[uv](https://docs.astral.sh/uv/)** | Python package manager used by this project |
+| **Docker** | For running infrastructure services and bioinformatics tools |
+| **Docker Compose** | Bundled with Docker Desktop; available separately on Linux |
+
+Install `uv` if you don't have it:
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
+<Callout type="info">
+  Prefer Podman instead of Docker? See the [Using Podman](#using-podman) section below.
+</Callout>
+
+## Step 1 — Clone and Install Dependencies
+
+```bash
+git clone https://github.com/QIBEBT-SCC/bioflow-ai.git
+cd bioflow-ai
+uv sync
+```
+
+This creates a virtual environment and installs all Python dependencies declared in `pyproject.toml`.
+
+## Step 2 — Create the Configuration File
+
+Copy the example config and edit the required fields:
+
+```bash
+cp config.example.toml config.toml
+```
+
+For a default local deployment the only values you **must** change are the JWT secret key and (optionally) the server port:
+
+```toml title="config.toml"
+[security]
+secret_key = "replace-with-a-long-random-string"  # [!code highlight]
+access_token_expire_minutes = 1440
+
+[network]
+host = "0.0.0.0"
+port = 8000
+
+[persistent.database]
+db_url = "postgresql+psycopg://bioflow_ai:123456@127.0.0.1:5432/bioflow_ai"
+
+[persistent.cache]
+llm_cache    = "redis://localhost:6379/0"
+monitor_cache = "redis://localhost:6379/2"
+api_cache    = "redis://localhost:6379/2"
+
+[persistent.storage]
+storage_path   = "./storage"
+genome_path    = "./storage/genome"
+test_data_path = "./testdata"
+
+[persistent.storage.s3]
+endpoint   = "http://localhost:9000"
+bucket     = "bioflow-ai"
+access_key = "minioadmin"
+secret_key = "minioadmin"
+
+[celery]
+broker  = "amqp://bioflow_ai:123456@localhost:5672//"
+backend = "redis://localhost:6379/1"
+
+[knowledge_base]
+milvus_url = "http://localhost:19530"
+```
+
+All other values match the defaults provided by `docker-compose.yml` and require no changes for a local setup.
+
+<Callout type="warn">
+  Generate a strong secret key before deploying, e.g. `openssl rand -hex 32`.
+</Callout>
+
+For the full list of configuration options see the [Configuration reference](/docs/configuration).
+
+## Step 3 — Prepare Storage Volumes
+
+Create the data directory for RustFS (S3-compatible object storage) and set the required ownership:
+
+```bash
+mkdir -p ./volumes/rustfs
+chown -R 10001:10001 ./volumes/rustfs
+```
+
+## Step 4 — Start Infrastructure Services
+
+```bash
+docker compose up -d
+```
+
+This starts the following containers:
+
+| Container | Service | Port |
+| --- | --- | --- |
+| `postgres-db` | PostgreSQL 18 | `5432` |
+| `redis-db` | Redis 8 | `6379` |
+| `rabbitmq-db` | RabbitMQ 4 | `5672` / `15672` (management UI) |
+| `milvus-standalone` | Milvus vector store | `19530` |
+| `rustfs` | Object storage (S3-compatible) | `9000` / `9001` (console) |
+| `etcd` | Milvus metadata store | — |
+| `web-ui` | Frontend web application | `3001` |
+
+Wait until all services report healthy before continuing:
+
+```bash
+docker compose ps
+```
+
+## Step 5 — Initialize the Database
+
+Run the one-time database initialization command to create tables and seed default data:
+
+```bash
+uv run bioflow-ai init system-init
+```
+
+## Step 6 — Start the Application
+
+Open two terminal sessions in the project directory and start each process:
+
+```bash
+# Terminal 1 — API server
+uv run bioflow-ai api
+```
+
+```bash
+# Terminal 2 — Celery worker
+uv run bioflow-ai worker
+```
+
+The API server starts on port `8000` by default. The web UI at `http://localhost:3001` connects to it automatically.
+
+## Verify the Installation
+
+Open `http://localhost:3001` in your browser. You should see the BioFlowAI login page.
+
+Log in with the default admin credentials created during `system-init`, then navigate to **Settings → LLM Models** to configure your first AI provider before running any AI-assisted workflows.
+
+---
+
+## Using Podman
+
+If you prefer Podman as the container runtime, install the extra dependencies and use `podman-compose` instead:
+
+```bash
+uv sync --extra podman
+```
+
+Start the Podman socket service (required for the backend to manage tool containers):
+
+```bash
+podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock > /dev/null 2>&1 &
+```
+
+Start the infrastructure containers:
+
+```bash
+podman-compose up -d
+```
+
+The remaining steps (database init, starting the server and worker) are identical to the Docker path above.
+
+---
+
+## Next Steps
+
+<Cards>
+  <Card title="Configuration" href="/docs/configuration" description="Full reference for config.toml — database, LLM providers, storage, and more" />
+  <Card title="Concepts" href="/docs/concepts" description="Understand projects, samples, workflows, and run instances" />
+</Cards>

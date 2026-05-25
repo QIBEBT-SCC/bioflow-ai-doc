@@ -1,0 +1,126 @@
+---
+title: Introduction
+description: BioFlowAI — A graph-based intelligent bioinformatics analysis platform
+---
+
+## What is BioFlowAI?
+
+BioFlowAI is an intelligent bioinformatics workflow platform that lets researchers design, execute, and monitor complex biological data analysis pipelines — without writing code. Built around a **visual node-based editor**, it combines containerized tool execution, AI-powered workflow design, and a collaborative multi-user environment.
+
+Whether you're processing RNA-seq reads, aligning genomes, or reproducing a published analysis, BioFlowAI provides the infrastructure to go from raw sequencing data to interpretable results.
+
+## Key Features
+
+### Visual Workflow Editor
+
+Workflows are built as **Directed Acyclic Graphs (DAGs)** using a drag-and-drop canvas (React Flow). Each node in the graph represents a step in the analysis — a bioinformatics tool, a data resource, a file operation, or a custom script. Edges between nodes define data dependencies and determine execution order.
+
+Supported node types:
+
+| Type | Description |
+| --- | --- |
+| **Tool** | Bioinformatics tools executed inside containers |
+| **Resource** | Input data: sample files, reference genomes, databases |
+| **Processor** | Built-in file operations (copy, compress, etc.) |
+| **Code** | User-defined Bash scripts |
+| **Value** | Inline string constants |
+
+### AI-Powered Workflow Design
+
+BioFlowAI includes an LLM agent system that can help design workflows automatically. Three modes are supported:
+
+- **Autonomous Design** — Describe your analysis goal in natural language; the AI proposes and constructs a complete workflow.
+- **Tool Expansion** — Specify a tool you want to use; the AI builds the surrounding pipeline (QC, alignment, downstream steps).
+- **Literature Reproduction** — Upload a paper; the AI extracts the methods section and reconstructs the analysis workflow.
+
+The agent searches a tool knowledge base (backed by Milvus vector search) and the web to identify appropriate tools, versions, and parameters.
+
+### Containerized Tool Execution
+
+Every tool runs inside an isolated **Docker or Podman container**. This means:
+
+- No dependency conflicts between tools
+- Reproducible execution across environments
+- GPU passthrough support for accelerated tasks
+
+Input and output file paths are resolved automatically, with mount conflicts handled transparently.
+
+### Flexible LLM Backend
+
+BioFlowAI supports multiple LLM providers through a unified abstraction layer. Each provider can be assigned to a specific role:
+
+| Role | Purpose |
+| --- | --- |
+| `AGENT` | Workflow design and planning |
+| `CHAT` | General user interaction |
+| `CODING` | Script generation |
+| `VISION` | Image analysis |
+| `LONG_CONTEXT` | Extended document analysis |
+| `HIGH_PERFORMANCE` | Complex reasoning tasks |
+
+Supported providers: **Anthropic (Claude)**, **OpenAI (GPT)**, **Google (Gemini)**, **DeepSeek**.
+
+### Project & Sample Management
+
+BioFlowAI organizes work around three concepts:
+
+- **Projects** — Group related samples and workflow runs.
+- **Samples** — Individual biological datasets (sequencing reads, spectra, images, etc.).
+- **Workflows** — Reusable graph templates that can be imported into any project.
+
+Running a workflow on a project with N samples creates N independent **RunInstances**, each tracked separately.
+
+### Real-Time Monitoring
+
+Task progress is tracked in Redis and exposed through the API. Each **TaskInstance** reports its current status (`pending`, `running`, `success`, `failed`), logs, and output file locations. Failed tasks can be individually retried.
+
+### Knowledge Base
+
+A vector store (Milvus) indexes tool documentation, parameter descriptions, and usage examples. This powers the AI agent's tool discovery and also supports search-assisted parameter filling in the UI.
+
+## Architecture Overview
+
+```
+┌─────────────────────────────────────────────────────┐
+│                    Frontend (React)                  │
+│              Visual Workflow Editor (React Flow)     │
+└────────────────────────┬────────────────────────────┘
+                         │ REST API
+┌────────────────────────▼────────────────────────────┐
+│                 Backend (FastAPI)                    │
+│   Auth · Projects · Workflows · Tools · Chat · ...   │
+└──────┬────────────────────────────────┬─────────────┘
+       │ Celery tasks                   │ LangGraph agents
+┌──────▼──────────┐           ┌─────────▼─────────────┐
+│  Task Workers   │           │     LLM Agent System   │
+│ (Docker/Podman) │           │  (Workflow Designer,   │
+│                 │           │   Tool Creator, etc.)  │
+└──────┬──────────┘           └───────────────────────┘
+       │
+┌──────▼─────────────────────────────────────────────┐
+│              Infrastructure                         │
+│  PostgreSQL · Redis · RabbitMQ · Milvus · MinIO     │
+└────────────────────────────────────────────────────┘
+```
+
+## Tech Stack
+
+| Layer | Technology |
+| --- | --- |
+| Backend | FastAPI, Python 3.12+, SQLModel |
+| Task Queue | Celery, RabbitMQ |
+| Database | PostgreSQL |
+| Cache / State | Redis |
+| Vector Store | Milvus |
+| Object Storage | MinIO / RustFS (S3-compatible) |
+| Containers | Docker / Podman |
+| AI Framework | LangChain, LangGraph |
+| Package Manager | uv |
+
+## What's Next
+
+<Cards>
+  <Card title="Installation" href="/docs/installation" description="Deploy BioFlowAI with Docker Compose" />
+  <Card title="Configuration" href="/docs/configuration" description="Configure the server, database, and LLM providers" />
+  <Card title="Concepts" href="/docs/concepts" description="Understand projects, samples, and workflow execution" />
+</Cards>
