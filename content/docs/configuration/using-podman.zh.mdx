@@ -1,0 +1,229 @@
+---
+title: 使用 Podman
+description: 配置使用 Podman 作为系统容器运行时
+---
+
+BioFlowAI 默认使用 Docker Compose 启动 PostgreSQL、Redis、RabbitMQ、RustFS、Milvus 和 Web UI 等基础设施服务。如果部署环境不方便安装 Docker，或希望使用无守护进程、rootless 的容器运行时，可以改用 Podman。
+
+<Callout type="info">
+  本页主要面向 Linux 环境。macOS 和 Windows 上的 Podman 通常运行在 Podman machine 虚拟机中，网络与挂载行为会有所不同；如果只是本地快速试用，Docker Desktop 通常更简单。
+</Callout>
+
+## 什么是 Podman？
+
+Podman 是一个兼容 OCI 标准的容器运行时，可以用于替代 Docker。它可以直接运行 Docker 镜像，也支持与 Docker 类似的 CLI，例如 `podman run`、`podman ps` 和 `podman logs`。
+
+与 Docker 相比，Podman 的主要差异包括：
+
+| 项目 | Docker | Podman |
+| --- | --- | --- |
+| 后台服务 | 依赖 Docker daemon | 默认无守护进程 |
+| 权限模型 | 常见部署需要 root 或 docker 组权限 | 支持 rootless 容器 |
+| Compose 支持 | 内置 `docker compose` | 通常使用 `podman-compose` 或 `podman compose` |
+| API Socket | 默认提供 Docker socket | 手动启动 Podman socket |
+
+BioFlowAI 的后端会通过容器运行时管理部分工具容器，因此改用 Podman 时除了启动 Compose 服务，还需要启用 Podman socket。
+
+## 安装 Podman 和 podman-compose
+
+请先安装 Podman 本体和 Compose 兼容工具。不同发行版的包名可能略有差异：
+
+```bash tab="Ubuntu / Debian"
+sudo apt update
+sudo apt install -y podman podman-compose
+```
+
+```bash tab="Fedora"
+sudo dnf install -y podman podman-compose
+```
+
+```bash tab="Arch Linux"
+sudo pacman -S podman podman-compose
+```
+
+安装完成后确认命令可用：
+
+```bash
+podman --version
+podman-compose --version
+```
+
+如果发行版未提供 `podman-compose`，也可以使用 Python 包管理器安装：
+
+```bash
+pipx install podman-compose
+```
+
+## 安装 BioFlowAI 的 Podman 依赖
+
+BioFlowAI 默认安装 Docker 后端依赖。使用 Podman 时，需要额外安装 `podman` 可选依赖：
+
+```bash
+uv sync --extra podman
+```
+
+该依赖用于让后端服务通过 Podman API 管理容器。仅安装系统级 Podman 命令是不够的。
+
+## 启动 Podman Socket
+
+后端管理工具容器时需要访问 Podman API。rootless 模式下可以启动当前用户的 Podman socket：
+
+```bash
+podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock > /dev/null 2>&1 &
+```
+
+可以用下面的命令检查 socket 是否已经创建：
+
+```bash
+ls /run/user/$(id -u)/podman/podman.sock
+```
+
+如果希望 socket 随用户会话自动启动，可以使用 systemd user service：
+
+```bash
+systemctl --user enable --now podman.socket
+```
+
+启用后，默认 socket 路径通常也是：
+
+```bash
+/run/user/$(id -u)/podman/podman.sock
+```
+
+<Callout type="warn">
+  请确认运行 BioFlowAI 后端的用户与启动 Podman socket 的用户一致。rootless Podman 的 socket 通常只对当前用户可用。
+</Callout>
+
+## 修改 BioFlowAI 配置
+
+首先需要在 `config.toml` 中将容器运行时切换为 Podman。同时由于 Podman 对部分 Docker Compose 写法的兼容性略有差异，还需要修改 `docker-compose.yml`，主要包括以下两处：
+
+1. Milvus 服务的 `security_opt` 需要改成 Podman 可识别的写法
+2. Web UI 访问后端需要显式使用宿主机网关地址
+
+```toml tab="config.toml"
+[docker]
+container = "podman" # [!code highlight]
+```
+
+```yaml tab="docker-compose.yml"
+services:
+  standalone:
+    container_name: milvus-standalone
+    image: docker.io/milvusdb/milvus:v2.6.14
+    command: [ "milvus", "run", "standalone" ]
+    security_opt:
+      - seccomp:unconfined # [!code --]
+      - seccomp=unconfined # [!code ++]
+
+  web-ui:
+    image: ghcr.io/qibebt-scc/bioflow-ai-web:0.2.4
+    environment:
+      BACKEND_API_URL: http://host.docker.internal:8003/api/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # [!code --]
+      - "host.docker.internal:10.0.2.2" # [!code ++]
+```
+
+## 启动服务
+
+完成配置后，使用 `podman-compose` 启动基础设施服务：
+
+```bash
+podman-compose up -d
+```
+
+查看服务状态：
+
+```bash
+podman-compose ps
+```
+
+查看某个服务日志：
+
+```bash
+podman-compose logs -f standalone
+```
+
+## 验证连接
+
+容器启动后，可以检查关键服务是否可访问：
+
+```bash
+# PostgreSQL
+podman exec postgres-db pg_isready -U bioflow_ai
+
+# Redis
+podman exec redis-db redis-cli ping
+
+# RabbitMQ 管理界面
+curl -s http://localhost:15672 | head -1
+
+# Milvus
+curl -s http://localhost:9091/healthz
+
+# RustFS / S3
+curl -s http://localhost:9000/health
+```
+
+如果这些检查通过，再启动 BioFlowAI 后端和前端服务。
+
+## 常见问题
+
+### 后端无法连接 Podman socket
+
+请确认 socket 已启动，并且后端进程使用同一个用户运行：
+
+```bash
+ls -l /run/user/$(id -u)/podman/podman.sock
+```
+
+如果使用 systemd 管理后端服务，需要确保服务中设置了正确的 `XDG_RUNTIME_DIR`，例如：
+
+```bash
+XDG_RUNTIME_DIR=/run/user/1000
+```
+
+其中 `1000` 应替换为运行 Podman 的用户 ID。
+
+### Web UI 无法访问后端 API
+
+请优先检查 `docker-compose.yml` 中的 `extra_hosts` 是否已经改为：
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:10.0.2.2"
+```
+
+同时确认宿主机上的后端服务正在监听 `8003` 端口，并允许来自容器网络的连接。
+
+### Milvus 启动失败
+
+如果 Milvus 日志中出现 seccomp 或权限相关错误，请确认 `security_opt` 使用的是：
+
+```yaml
+security_opt:
+  - seccomp=unconfined
+```
+
+修改后重新创建服务：
+
+```bash
+podman-compose up -d --force-recreate standalone
+```
+
+
+## 切回 Docker
+
+如果需要切回 Docker，只需将 `config.toml` 改回 Docker，并恢复 `docker-compose.yml` 中针对 Podman 的两处兼容性修改：
+
+```toml
+[docker]
+container = "docker"
+```
+
+然后使用 Docker Compose 重新启动服务：
+
+```bash
+docker compose up -d
+```

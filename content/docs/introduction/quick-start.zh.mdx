@@ -1,19 +1,19 @@
 ---
 title: 快速开始
-description: 使用 Docker Compose 在自有服务器上部署 BioFlowAI
+description: 使用 Docker Compose + uv 本地部署部署 BioFlowAI
 icon: Rocket
 ---
 
-本指南介绍了使用 Docker 和 `uv` 包管理器的默认安装路径。整个技术栈（包括数据库、消息代理、向量存储、对象存储和 Web 界面）均通过一个 `docker-compose.yml` 文件进行管理。
+import { DynamicLink } from 'fumadocs-core/dynamic-link';
 
-## 前提条件
+本指南介绍了如何使用 Docker 和 `uv` 包管理器的默认安装路径。整个技术栈（包括数据库、消息代理、向量存储、对象存储和 Web 界面）均通过一个 `docker-compose.yml` 文件进行管理。
+
+## 系统依赖
 
 | 需求 | 说明 |
 | --- | --- |
-| **Python 3.12+** | 后端所需 |
 | **[uv](https://docs.astral.sh/uv/)** | 本项目使用的 Python 包管理器 |
 | **Docker** | 用于运行基础设施服务与生物信息学工具 |
-| **Docker Compose** | 已捆绑于 Docker Desktop；Linux 系统需单独安装 |
 
 若未安装 `uv`，请执行以下命令：
 
@@ -22,7 +22,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 <Callout type="info">
-  更倾向于使用 Podman 而非 Docker？请参阅下方的[使用 Podman](#使用-podman) 部分。
+  想要使用 Podman 作为容器运行时而非 Docker？请参考 <DynamicLink href="/[lang]/docs/configuration/using-podman">使用 Podman</DynamicLink> 部分。
 </Callout>
 
 ## 第一步 — 克隆仓库并安装依赖
@@ -43,7 +43,7 @@ uv sync
 cp config.example.toml config.toml
 ```
 
-对于默认的本地部署，您**必须**修改的仅有 JWT 密钥，以及（可选）服务器端口：
+对于默认的本地部署，您**必须**修改的仅有 JWT 密钥，以及（可选）服务器端口和网络代理配置：
 
 ```toml title="config.toml"
 [security]
@@ -53,45 +53,33 @@ access_token_expire_minutes = 1440
 [network]
 host = "0.0.0.0"
 port = 8000
-
-[persistent.database]
-db_url = "postgresql+psycopg://bioflow_ai:123456@127.0.0.1:5432/bioflow_ai"
-
-[persistent.cache]
-llm_cache    = "redis://localhost:6379/0"
-monitor_cache = "redis://localhost:6379/2"
-api_cache    = "redis://localhost:6379/2"
-
-[persistent.storage]
-storage_path   = "./storage"
-genome_path    = "./storage/genome"
-test_data_path = "./testdata"
-
-[persistent.storage.s3]
-endpoint   = "http://localhost:9000"
-bucket     = "bioflow-ai"
-access_key = "minioadmin"
-secret_key = "minioadmin"
-
-[celery]
-broker  = "amqp://bioflow_ai:123456@localhost:5672//"
-backend = "redis://localhost:6379/1"
-
-[knowledge_base]
-milvus_url = "http://localhost:19530"
+proxy_type = "http"
+proxy_host = "localhost"
+proxy_port = 7890 # [!code highlight]
+use_proxy = true # [!code highlight]
 ```
-
-其余所有值均与 `docker-compose.yml` 提供的默认值一致，本地部署无需更改。
-
-<Callout type="warn">
-  部署前请生成一个强密钥，例如使用 `openssl rand -hex 32`。
+<Callout type="info">
+  secret_key 可以使用 `openssl rand -hex 32` 或其他类似命令生成。
+</Callout>
+<Callout type="warning">
+  若修改了`network.port`，需要同步修改docker-compose.yml中的web-ui环境变量，详见<DynamicLink href="/[lang]/docs/configuration">配置参考</DynamicLink>的相关章节。
 </Callout>
 
-完整的配置选项列表请参阅[配置参考](/docs/configuration)。
+
+考虑到部分docker.io仓库存储的镜像在拉取时需要认证身份，还需要设置 docker.io 的用户名和密码：
+
+```toml title="config.toml"
+[docker]
+container = "docker"
+username = "" # [!code highlight]
+password = "" # [!code highlight]
+```
+
+完整的配置选项列表请参阅<DynamicLink href="/[lang]/docs/configuration">配置参考</DynamicLink>。
 
 ## 第三步 — 准备存储卷
 
-为 RustFS（兼容 S3 的对象存储）创建数据目录并设置所有权：
+为 RustFS（兼容 S3 的对象存储）创建数据目录并更新所有权：
 
 ```bash
 mkdir -p ./volumes/rustfs
@@ -130,7 +118,11 @@ docker compose ps
 uv run bioflow-ai init system-init
 ```
 
-## 第六步 — 启动应用
+<Callout type="warning">
+  初始化操作时会从 huggingface 拉取数据文件，若网络环境不佳可能失败。
+</Callout>
+
+## 第六步 — 启动应用 [#system-init]
 
 在项目目录中打开两个终端会话，分别启动以下进程：
 
@@ -146,40 +138,17 @@ uv run bioflow-ai worker
 
 API 服务器默认在端口 `8000` 上启动。位于 `http://localhost:3001` 的 Web 界面将自动连接该服务器。
 
-## 验证安装
+在浏览器中打开 `http://localhost:3001`。您应能看到 BioFlowAI 的登录页面：
 
-在浏览器中打开 `http://localhost:3001`。您应能看到 BioFlowAI 的登录页面。
+![首页](/homepage.png)
 
-使用 `system-init` 期间创建的默认管理员凭据登录，然后导航至**设置 → LLM 模型**，在运行任何 AI 辅助工作流之前配置您的第一个 AI 提供商。
+使用 [system-init](#system-init) 期间创建的默认管理员凭据登录，然后导航至**设置 → LLM 模型**，在运行任何 AI 辅助工作流之前配置您的第一个 AI 提供商。
 
----
 
-## 使用 Podman
-
-若您偏好使用 Podman 作为容器运行环境，请安装额外依赖并使用 `podman-compose` 替代：
-
-```bash
-uv sync --extra podman
-```
-
-启动 Podman 套接字服务（后端管理工具容器所需）：
-
-```bash
-podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock > /dev/null 2>&1 &
-```
-
-启动基础设施容器：
-
-```bash
-podman-compose up -d
-```
-
-其余步骤（数据库初始化、启动服务器和工作节点）与上述 Docker 路径完全相同。
-
----
 
 ## 后续步骤
 
 <Cards>
-  <Card title="什么是 BioFlowAI" href="/docs/introduction/what-is-bioflow-ai" description="了解 BioFlowAI 的核心概念" />
+  <Card title="什么是 BioFlowAI" href="/zh/introduction/what-is-bioflow-ai" description="了解 BioFlowAI 的核心概念" />
+  <Card title="配置文件" href="/zh/docs/configuration" description="详细修改配置文件" />
 </Cards>

@@ -1,19 +1,19 @@
 ---
 title: Quick Start
-description: Deploy BioFlowAI on your own server using Docker Compose
+description: Deploy BioFlowAI locally using Docker Compose + uv
 icon: Rocket
 ---
 
+import { DynamicLink } from 'fumadocs-core/dynamic-link';
+
 This guide walks through the default installation path using Docker and the `uv` package manager. The entire stack — database, message broker, vector store, object storage, and web UI — is managed via a single `docker-compose.yml`.
 
-## Prerequisites
+## System Dependencies
 
 | Requirement | Notes |
 | --- | --- |
-| **Python 3.12+** | Required by the backend |
 | **[uv](https://docs.astral.sh/uv/)** | Python package manager used by this project |
 | **Docker** | For running infrastructure services and bioinformatics tools |
-| **Docker Compose** | Bundled with Docker Desktop; available separately on Linux |
 
 Install `uv` if you don't have it:
 
@@ -22,7 +22,7 @@ curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
 <Callout type="info">
-  Prefer Podman instead of Docker? See the [Using Podman](#using-podman) section below.
+  Want to use Podman as the container runtime instead of Docker? See <DynamicLink href="/[lang]/docs/configuration/using-podman">Using Podman</DynamicLink>.
 </Callout>
 
 ## Step 1 — Clone and Install Dependencies
@@ -43,7 +43,7 @@ Copy the example config and edit the required fields:
 cp config.example.toml config.toml
 ```
 
-For a default local deployment the only values you **must** change are the JWT secret key and (optionally) the server port:
+For a default local deployment, the only values you **must** change are the JWT secret key and, optionally, the server port and network proxy settings:
 
 ```toml title="config.toml"
 [security]
@@ -53,45 +53,34 @@ access_token_expire_minutes = 1440
 [network]
 host = "0.0.0.0"
 port = 8000
-
-[persistent.database]
-db_url = "postgresql+psycopg://bioflow_ai:123456@127.0.0.1:5432/bioflow_ai"
-
-[persistent.cache]
-llm_cache    = "redis://localhost:6379/0"
-monitor_cache = "redis://localhost:6379/2"
-api_cache    = "redis://localhost:6379/2"
-
-[persistent.storage]
-storage_path   = "./storage"
-genome_path    = "./storage/genome"
-test_data_path = "./testdata"
-
-[persistent.storage.s3]
-endpoint   = "http://localhost:9000"
-bucket     = "bioflow-ai"
-access_key = "minioadmin"
-secret_key = "minioadmin"
-
-[celery]
-broker  = "amqp://bioflow_ai:123456@localhost:5672//"
-backend = "redis://localhost:6379/1"
-
-[knowledge_base]
-milvus_url = "http://localhost:19530"
+proxy_type = "http"
+proxy_host = "localhost"
+proxy_port = 7890 # [!code highlight]
+use_proxy = true # [!code highlight]
 ```
 
-All other values match the defaults provided by `docker-compose.yml` and require no changes for a local setup.
-
-<Callout type="warn">
-  Generate a strong secret key before deploying, e.g. `openssl rand -hex 32`.
+<Callout type="info">
+  You can generate `secret_key` with `openssl rand -hex 32` or a similar command.
 </Callout>
 
-For the full list of configuration options see the [Configuration reference](/docs/configuration).
+<Callout type="warning">
+  If you change `network.port`, also update the `web-ui` environment variables in `docker-compose.yml`. See the relevant section in the <DynamicLink href="/[lang]/docs/configuration">Configuration reference</DynamicLink>.
+</Callout>
+
+Some images stored in docker.io repositories may require authentication when pulled, so you also need to set your docker.io username and password:
+
+```toml title="config.toml"
+[docker]
+container = "docker"
+username = "" # [!code highlight]
+password = "" # [!code highlight]
+```
+
+For the full list of configuration options, see the <DynamicLink href="/[lang]/docs/configuration">Configuration reference</DynamicLink>.
 
 ## Step 3 — Prepare Storage Volumes
 
-Create the data directory for RustFS (S3-compatible object storage) and set the required ownership:
+Create the data directory for RustFS (S3-compatible object storage) and update the required ownership:
 
 ```bash
 mkdir -p ./volumes/rustfs
@@ -130,7 +119,11 @@ Run the one-time database initialization command to create tables and seed defau
 uv run bioflow-ai init system-init
 ```
 
-## Step 6 — Start the Application
+<Callout type="warning">
+  Initialization pulls data files from Hugging Face and may fail if your network connection is unreliable.
+</Callout>
+
+## Step 6 — Start the Application [#system-init]
 
 Open two terminal sessions in the project directory and start each process:
 
@@ -146,40 +139,15 @@ uv run bioflow-ai worker
 
 The API server starts on port `8000` by default. The web UI at `http://localhost:3001` connects to it automatically.
 
-## Verify the Installation
+Open `http://localhost:3001` in your browser. You should see the BioFlowAI login page:
 
-Open `http://localhost:3001` in your browser. You should see the BioFlowAI login page.
+![Home page](/homepage.png)
 
-Log in with the default admin credentials created during `system-init`, then navigate to **Settings → LLM Models** to configure your first AI provider before running any AI-assisted workflows.
-
----
-
-## Using Podman
-
-If you prefer Podman as the container runtime, install the extra dependencies and use `podman-compose` instead:
-
-```bash
-uv sync --extra podman
-```
-
-Start the Podman socket service (required for the backend to manage tool containers):
-
-```bash
-podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock > /dev/null 2>&1 &
-```
-
-Start the infrastructure containers:
-
-```bash
-podman-compose up -d
-```
-
-The remaining steps (database init, starting the server and worker) are identical to the Docker path above.
-
----
+Log in with the default admin credentials created during [system-init](#system-init), then navigate to **Settings → LLM Models** to configure your first AI provider before running any AI-assisted workflows.
 
 ## Next Steps
 
 <Cards>
   <Card title="What is BioFlowAI" href="/docs/introduction/what-is-bioflow-ai" description="Learn the core ideas behind BioFlowAI" />
+  <Card title="Configuration" href="/docs/configuration" description="A Detailed Understanding of the Configuration File" />
 </Cards>

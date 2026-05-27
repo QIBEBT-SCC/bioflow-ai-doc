@@ -1,4 +1,4 @@
 {
   "title": "配置",
-  "pages": ["index", "infrastructure", "pdf-parser", "knowledge-base"]
+  "pages": ["index", "using-podman", "infrastructure", "pdf-parser", "knowledge-base"]
 }

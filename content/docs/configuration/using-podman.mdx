@@ -1,0 +1,229 @@
+---
+title: Using Podman
+description: Configure Podman as the System Container Runtime
+---
+
+BioFlowAI uses Docker Compose by default to start infrastructure services such as PostgreSQL, Redis, RabbitMQ, RustFS, Milvus, and Web UI. If the deployment environment makes it inconvenient to install Docker or if a daemonless, rootless container runtime is preferred, Podman can be used instead.
+
+<Callout type="info">
+  This page is primarily intended for Linux environments. On macOS and Windows, Podman typically runs inside a Podman machine virtual machine, resulting in different networking and mount behaviors; for a quick local trial, Docker Desktop is usually simpler.
+</Callout>
+
+## What is Podman?
+
+Podman is an OCI-compliant container runtime that can replace Docker. It can run Docker images directly and supports a CLI similar to Docker, for example `podman run`, `podman ps`, and `podman logs`.
+
+The main differences between Podman and Docker include:
+
+| Feature | Docker | Podman |
+| --- | --- | --- |
+| Background Service | Depends on Docker daemon | Daemonless by default |
+| Permission Model | Common deployments require root or docker group privileges | Supports rootless containers |
+| Compose Support | Built-in `docker compose` | Typically uses `podman-compose` or `podman compose` |
+| API Socket | Provides Docker socket by default | Requires manual start of Podman socket |
+
+The BioFlowAI backend manages some tool containers through the container runtime. Therefore, when switching to Podman, in addition to starting the Compose services, the Podman socket must also be enabled.
+
+## Installing Podman and podman-compose
+
+First, install Podman itself and the Compose compatibility tool. Package names may vary slightly between distributions:
+
+```bash tab="Ubuntu / Debian"
+sudo apt update
+sudo apt install -y podman podman-compose
+```
+
+```bash tab="Fedora"
+sudo dnf install -y podman podman-compose
+```
+
+```bash tab="Arch Linux"
+sudo pacman -S podman podman-compose
+```
+
+After installation, confirm that the commands are available:
+
+```bash
+podman --version
+podman-compose --version
+```
+
+If the distribution does not provide `podman-compose`, it can also be installed using the Python package manager:
+
+```bash
+pipx install podman-compose
+```
+
+## Installing BioFlowAI Podman Dependencies
+
+BioFlowAI installs Docker backend dependencies by default. When using Podman, the optional `podman` dependency must be installed additionally:
+
+```bash
+uv sync --extra podman
+```
+
+This dependency is required for the backend service to manage containers via the Podman API. Installing only the system-level Podman command is not sufficient.
+
+## Starting the Podman Socket
+
+The backend requires access to the Podman API to manage tool containers. In rootless mode, the Podman socket for the current user can be started as follows:
+
+```bash
+podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock > /dev/null 2>&1 &
+```
+
+Use the command below to check if the socket has been created:
+
+```bash
+ls /run/user/$(id -u)/podman/podman.sock
+```
+
+If the socket should be started automatically with the user session, a systemd user service can be used:
+
+```bash
+systemctl --user enable --now podman.socket
+```
+
+After enabling it, the default socket path is usually:
+
+```bash
+/run/user/$(id -u)/podman/podman.sock
+```
+
+<Callout type="warn">
+  Ensure that the user running the BioFlowAI backend is the same user who starts the Podman socket. A rootless Podman socket is typically only accessible to the current user.
+</Callout>
+
+## Modifying BioFlowAI Configuration
+
+First, switch the container runtime to Podman in `config.toml`. Additionally, because Podman has slight compatibility differences with some Docker Compose syntax, `docker-compose.yml` also needs modification. The changes involve two main areas:
+
+1. The `security_opt` for the Milvus service needs to use a format recognizable by Podman
+2. The Web UI backend access must explicitly use the host machine gateway address
+
+```toml tab="config.toml"
+[docker]
+container = "podman" # [!code highlight]
+```
+
+```yaml tab="docker-compose.yml"
+services:
+  standalone:
+    container_name: milvus-standalone
+    image: docker.io/milvusdb/milvus:v2.6.14
+    command: [ "milvus", "run", "standalone" ]
+    security_opt:
+      - seccomp:unconfined # [!code --]
+      - seccomp=unconfined # [!code ++]
+
+  web-ui:
+    image: ghcr.io/qibebt-scc/bioflow-ai-web:0.2.4
+    environment:
+      BACKEND_API_URL: http://host.docker.internal:8003/api/v1
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # [!code --]
+      - "host.docker.internal:10.0.2.2" # [!code ++]
+```
+
+## Starting Services
+
+After completing the configuration, start the infrastructure services using `podman-compose`:
+
+```bash
+podman-compose up -d
+```
+
+Check the service status:
+
+```bash
+podman-compose ps
+```
+
+View logs for a specific service:
+
+```bash
+podman-compose logs -f standalone
+```
+
+## Verifying Connectivity
+
+Once the containers are started, check whether the key services are accessible:
+
+```bash
+# PostgreSQL
+podman exec postgres-db pg_isready -U bioflow_ai
+
+# Redis
+podman exec redis-db redis-cli ping
+
+# RabbitMQ Management Interface
+curl -s http://localhost:15672 | head -1
+
+# Milvus
+curl -s http://localhost:9091/healthz
+
+# RustFS / S3
+curl -s http://localhost:9000/health
+```
+
+If these checks pass, proceed to start the BioFlowAI backend and frontend services.
+
+## Common Issues
+
+### Backend Cannot Connect to Podman Socket
+
+Confirm that the socket has been started and that the backend process runs with the same user:
+
+```bash
+ls -l /run/user/$(id -u)/podman/podman.sock
+```
+
+If the backend service is managed by systemd, ensure that the correct `XDG_RUNTIME_DIR` is set in the service configuration, for example:
+
+```bash
+XDG_RUNTIME_DIR=/run/user/1000
+```
+
+Replace `1000` with the user ID running Podman.
+
+### Web UI Cannot Access Backend API
+
+First, check whether `extra_hosts` in `docker-compose.yml` has been changed to:
+
+```yaml
+extra_hosts:
+  - "host.docker.internal:10.0.2.2"
+```
+
+Also confirm that the backend service on the host machine is listening on port `8003` and allows connections from the container network.
+
+### Milvus Fails to Start
+
+If the Milvus logs show errors related to seccomp or permissions, verify that `security_opt` uses:
+
+```yaml
+security_opt:
+  - seccomp=unconfined
+```
+
+After the modification, recreate the service:
+
+```bash
+podman-compose up -d --force-recreate standalone
+```
+
+
+## Switching Back to Docker
+
+To switch back to Docker, change `config.toml` back to Docker and revert the two Podman compatibility modifications in `docker-compose.yml`:
+
+```toml
+[docker]
+container = "docker"
+```
+
+Then restart the services using Docker Compose:
+
+```bash
+docker compose up -d
+```
