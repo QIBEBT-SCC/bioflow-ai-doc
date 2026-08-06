@@ -1,34 +1,29 @@
 ---
 title: Knowledge Base
-description: Configure the vector store and embedding model for AI-assisted tool discovery
+description: Configure Milvus and an OpenAI-compatible embedding model API
 ---
 
-The knowledge base indexes tool documentation and parameter descriptions, powering the AI agents' tool discovery and workflow design features. It requires a running Milvus instance (started automatically via `docker-compose.yml`) and an embedding model.
+The knowledge base writes tool documentation and parameter descriptions to Milvus for AI-assisted tool discovery and workflow design. The current configuration uses one flat `[knowledge_base]` section:
 
 ```toml
 [knowledge_base]
-milvus_url      = "http://localhost:19530"
-use_local_model = false
+milvus_url = "http://localhost:19530"
+embedding_model = "Qwen/Qwen3-Embedding-4B"
+base_url = "https://api.siliconflow.cn/v1/"
+api_key = ""
 ```
 
-| Key | Description |
-| --- | --- |
-| `milvus_url` | Milvus vector store address. Defaults to the bundled Docker service. |
-| `use_local_model` | `false` = remote API (default), `true` = local model inference. |
+| Key | Default | Description |
+| --- | --- | --- |
+| `milvus_url` | `http://localhost:19530` | Milvus address; automatic initialisation updates it when the default port is occupied. |
+| `embedding_model` | `Qwen/Qwen3-Embedding-4B` | Model name sent to the embedding API. |
+| `base_url` | SiliconFlow `/v1/` | OpenAI-compatible API root. |
+| `api_key` | Empty | Embedding service credential. |
 
----
+`auto-init` prompts for the embedding model, base URL, and API key. Preset-data initialisation needs both the embedding API and Milvus to be available so it can build vector indexes.
 
-## Choosing a mode
+<Callout type="warn">
+  `use_local_model`, `[knowledge_base.remote]`, and `[knowledge_base.local]` from older documentation are no longer valid settings. Unknown fields are ignored.
+</Callout>
 
-| Scenario | Recommended mode |
-| --- | --- |
-| Quick setup, no GPU needed | Remote API |
-| Air-gapped / private network | Local model |
-| Data must not leave the server | Local model |
-| Low-latency, high-throughput indexing | Local model (GPU) |
-
-## Next step
-
-<Cards>
-  <Card title="Embedding Model" href="/docs/configuration/knowledge-base/embedding-model" description="Configure remote API or local embedding inference" />
-</Cards>
+A self-hosted model uses the same OpenAI-compatible API path; no local-mode switch is required. See [Embedding Model](/docs/configuration/knowledge-base/embedding-model).

@@ -1,0 +1,110 @@
+---
+title: 自动初始化
+description: 使用交互式向导生成配置、启动依赖并初始化模型
+---
+
+在项目根目录运行：
+
+```bash
+uv run bioflow-ai auto-init
+```
+
+该命令是新部署的推荐入口。它会把原本需要手动完成的配置生成、端口同步、容器启动、数据库预置和 AI 模型设置串成一个交互式流程。
+
+<Callout type="info">
+  向导不会启动 FastAPI 或 Celery Worker。完成初始化后仍需分别运行 `uv run bioflow-ai api` 和 `uv run bioflow-ai worker`。
+</Callout>
+
+## 执行流程
+
+| 阶段 | 行为 | 是否可跳过 |
+| --- | --- | --- |
+| 配置文件 | 生成项目根目录的 `config.toml` | 已有文件时可选择保留 |
+| 测试数据 | 从 Hugging Face 同步示例数据到 `test_data_path` | 是 |
+| 项目容器 | 生成 `docker-compose.yml`，启动依赖并等待健康检查通过 | 是 |
+| 系统预置数据 | 创建表、管理员、工具数据和 Milvus 向量索引 | 是 |
+| AI Provider | 配置 Provider、模型和系统模型角色 | 前置阶段失败时不执行 |
+
+跳过可选阶段不会中断向导。若某一步实际执行失败，结束页会提示存在未完成的初始化步骤。
+
+## 生成 `config.toml`
+
+首次运行时，向导会依次询问：
+
+1. 网络代理
+2. 数据、基因组、生物信息数据库和测试数据路径
+3. 默认线程数和内存上限
+4. Docker 或 Podman，以及可选的 docker.io 凭据
+5. Milvus 与嵌入模型 API
+6. PDF 解析器
+
+未询问的配置使用当前代码中的默认值，包括自动生成的随机 `security.secret_key`。
+
+如果 `config.toml` 已存在，可选择：
+
+- **保留**：不改写配置，继续执行测试数据、容器、数据库和模型初始化。
+- **覆盖**：重新填写配置并写入新文件。
+
+<Callout type="warn">
+  覆盖会写入完整的新配置。请先备份已有文件中的自定义密码、外部服务地址和安全设置。
+</Callout>
+
+## 端口预检查与 Compose
+
+向导会检查下列宿主机端口。若端口已占用，会从默认值开始自动向后寻找可用端口，并同时更新 `config.toml` 与生成的 `docker-compose.yml`。
+
+| 服务 | 默认端口 |
+| --- | --- |
+| FastAPI | `8000` |
+| PostgreSQL | `5432` |
+| Redis | `6379` |
+| RabbitMQ | `5672` |
+| RustFS | `9000` |
+| Milvus | `19530` |
+| Web UI | `3000` |
+
+Compose 文件来自所选运行时对应的模板：
+
+- Docker：`deploy/docker/docker-compose.yml`
+- Podman：`deploy/podman/docker-compose.yml`
+
+向导还会同步 Web UI 的 `BACKEND_API_URL`，创建 RustFS 和 Milvus 数据目录，执行 Compose 启动命令，并等待 PostgreSQL、RustFS 和 Milvus 就绪后才进入数据库初始化。
+
+## 测试数据和系统预置数据
+
+测试数据通过 `uvx hf sync` 下载到 `[persistent.storage].test_data_path`。若目录已有内容，向导会先询问是否继续同步。
+
+系统预置阶段会：
+
+1. 创建数据库表。
+2. 在用户表为空时创建管理员 `admin@email.com`，初始密码为 `admin`。
+3. 导入镜像、工具文档和工具定义。
+4. 重建工具、镜像和辅助节点的 Milvus 向量索引。
+
+缺失的预置文件会从 `Aye10032/bioflow-ai-prebuild` Hugging Face bucket 下载。首次登录后请立即修改管理员密码。
+
+## AI Provider 与模型
+
+向导支持一次选择一个或多个 Provider：
+
+| Provider | 内置候选模型 |
+| --- | --- |
+| DeepSeek | `deepseek-v4-flash`、`deepseek-v4-pro` |
+| OpenAI | `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna` |
+| Custom | 自行填写 OpenAI-compatible base URL 和模型 API 名称 |
+
+每个模型都可以设置显示名称；直接回车时显示名称与模型 API 名称相同。Custom Provider 可连续添加多个模型，API key 可以留空以兼容不鉴权的本地服务。
+
+模型保存后，向导会显示当前系统角色分配。可以逐项修改长上下文、智能体、编码、简单任务、高性能、常规对话和视觉模型，然后选择“完成”。
+
+已知模型会自动填充价格。无法识别价格的模型暂记为 `0`，向导会提示稍后到 Web UI 的模型设置页面补充。
+
+## 重新运行
+
+`auto-init` 可以再次运行，用于同步测试数据、重新启动缺失的容器或更新模型配置。需要注意：
+
+- 选择保留 `config.toml` 时，不会重新进行端口预检查。
+- 执行系统预置数据初始化会用预置内容重建相关数据和向量索引。
+- Provider 向导会更新所选 Provider，并停用本次未选择的 Provider。
+
+只需要维护数据库或向量索引时，请使用 [`bioflow-ai init` 命令](/docs/cli#init--初始化与数据库管理)，无需重新运行完整向导。

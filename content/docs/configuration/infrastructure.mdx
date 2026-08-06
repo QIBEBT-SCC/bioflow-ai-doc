@@ -3,12 +3,12 @@ title: Infrastructure Services
 description: Configure PostgreSQL, Redis, RabbitMQ, object storage, and Milvus
 ---
 
-The services below are all managed by `docker-compose.yml`. For a default local deployment **no changes are needed** — `config.example.toml` and `docker-compose.yml` are already aligned.
+The services below are managed by `docker-compose.yml` in the project root. `auto-init` generates this file from the Docker or Podman template and keeps its host ports aligned with `config.toml`. A default local deployment needs no manual connection changes.
 
 Only read on if you need to change a password, resolve a port conflict, or replace a bundled service with an external one.
 
 <Callout type="warn">
-  `config.toml` and `docker-compose.yml` must always be kept in sync. Changing a port or password in one place without updating the other will prevent the application from connecting.
+  Keep `config.toml` and `docker-compose.yml` aligned when changing ports or credentials manually. For a new installation, prefer `uv run bioflow-ai auto-init` so port conflicts are handled automatically.
 </Callout>
 
 ---
@@ -74,6 +74,7 @@ Point `db_url` at the external host and comment out the `postgres-db` service in
 llm_cache     = "redis://localhost:6379/0"
 monitor_cache = "redis://localhost:6379/2"
 api_cache     = "redis://localhost:6379/2"
+notification_cache = "redis://localhost:6379/2"
 ```
 
 All three share the same Redis instance, separated by database index.
@@ -83,6 +84,7 @@ All three share the same Redis instance, separated by database index.
 | `llm_cache` | 0 | LLM response cache |
 | `monitor_cache` | 2 | Task progress state |
 | `api_cache` | 2 | API layer cache |
+| `notification_cache` | 2 | Notification state cache |
 
 The Celery result backend (index 1) is configured separately under `[celery]`.
 
@@ -96,7 +98,7 @@ redis-db:
 
 ### Resolve a port conflict
 
-Change the host-side port (e.g. `"16379:6379"`) and update **all** Redis URLs in `config.toml`: `llm_cache`, `monitor_cache`, `api_cache`, `[celery].backend`, and `[develop].checkpoint_url`.
+Change the host-side port (e.g. `"16379:6379"`) and update **all** Redis URLs in `config.toml`: `llm_cache`, `monitor_cache`, `api_cache`, `notification_cache`, `[celery].backend`, and `[develop].checkpoint_url`.
 
 ### Use an external Redis instance
 
@@ -132,20 +134,17 @@ rabbitmq-db:
     RABBITMQ_DEFAULT_PASS: 123456        # → password in broker
   ports:
     - "5672:5672"                        # → port in broker
-    - "15672:15672"                      # Management UI (http://localhost:15672)
 ```
 
 ### Change the password
 
-RabbitMQ only reads `RABBITMQ_DEFAULT_PASS` on first startup. To change an existing password, wipe the data volume:
+RabbitMQ only reads `RABBITMQ_DEFAULT_PASS` on first startup. For an already initialised data volume, change the password in the running service:
 
 ```bash
-docker compose down rabbitmq-db
-rm -rf volumes/rabbitmq
-docker compose up -d rabbitmq-db
+docker compose exec rabbitmq-db rabbitmqctl change_password bioflow_ai NEW_PASSWORD
 ```
 
-Then update `broker` in `config.toml`.
+Then update `broker` in `config.toml`. The current Compose template exposes only the AMQP port `5672`; it does not publish the RabbitMQ management UI port to the host.
 
 ### Resolve a port conflict
 
@@ -166,7 +165,7 @@ region         = "us-east-1"
 bucket         = "bioflow-ai"
 access_key     = "minioadmin"
 secret_key     = "minioadmin"
-use_ssl        = false
+use_ssl        = true
 presign_expire = 3600
 ```
 
@@ -180,7 +179,6 @@ rustfs:
     RUSTFS_REGION: us-east-1         # → region
   ports:
     - "9000:9000"                    # → port in endpoint
-    - "9001:9001"                    # Web console (browser only)
 ```
 
 ### Change credentials
@@ -191,7 +189,7 @@ rustfs:
 
 ### Connect to external S3 or MinIO
 
-Set `endpoint` to the external URL, fill in matching credentials, and comment out the `rustfs` service. Set `use_ssl = true` for HTTPS endpoints (AWS S3, Alibaba OSS, etc.).
+Set `endpoint` to the external URL, fill in matching credentials, and stop the bundled `rustfs` service if it is no longer needed. `use_ssl` controls TLS in the S3 client and defaults to `true`; set it to `false` for a plain HTTP endpoint when required.
 
 </Accordion>
 
@@ -233,17 +231,20 @@ After any infrastructure change, verify each service before starting the applica
 
 ```bash
 # PostgreSQL
-psql "postgresql://bioflow_ai:YOUR_PASS@localhost:5432/bioflow_ai" -c "SELECT 1"
+docker compose exec -T postgres-db pg_isready -h 127.0.0.1 -U bioflow_ai -d bioflow_ai
 
 # Redis
-redis-cli -h localhost -p 6379 ping
+docker compose exec -T redis-db redis-cli ping
 
 # RabbitMQ
-curl -s http://localhost:15672 | head -1
+docker compose exec -T rabbitmq-db rabbitmq-diagnostics -q ping
+
+# etcd
+docker compose exec -T etcd etcdctl endpoint health
 
 # Milvus
-curl -s http://localhost:9091/healthz
+docker compose exec -T standalone curl -fsS http://localhost:9091/healthz
 
 # RustFS / S3
-curl -s http://localhost:9000/health
+docker compose exec -T rustfs curl -fsS http://localhost:9000/health
 ```

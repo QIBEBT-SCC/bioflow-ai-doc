@@ -1,38 +1,31 @@
 ---
 title: PDF Parser
-description: Configure the PDF parsing engine used by AI agents to read scientific papers
+description: Configure the Open MinerU service used by AI agents to read scientific papers
 ---
 
-The PDF parser is used by AI agents to extract content from scientific literature when designing workflows from papers. Configure the engine in `config.toml`:
+The PDF parser extracts Markdown and images from papers before writing the documents to the knowledge base. The currently implemented runtime engine is `open_mineru`:
 
 ```toml
 [pdf_parser]
-engine     = "open_mineru"
+engine = "open_mineru"
 batch_size = 5
+
+[pdf_parser.open_mineru]
+api_url = "http://localhost:8000"
+timeout = 600
 ```
 
-| Key | Description |
-| --- | --- |
-| `engine` | Parsing backend to use. See options below. |
-| `batch_size` | Number of PDFs to process concurrently. |
+| Key | Default | Description |
+| --- | --- | --- |
+| `engine` | `local` | Parser engine name; set it to `open_mineru` when PDF parsing is needed. |
+| `batch_size` | `5` | PDF parsing batch configuration. |
+| `open_mineru.api_url` | `http://localhost:8000` | Open MinerU API root. |
+| `open_mineru.timeout` | `600` | Request timeout in seconds. |
 
----
-
-## Choosing an engine
-
-| Scenario | Recommended engine |
-| --- | --- |
-| Have a GPU server, want best quality | `open_mineru` |
-| No GPU, don't want to self-host | `mineru` or `doc2x` |
-| Don't need PDF analysis at all | `local` |
-| Need structured reference extraction | `grobid` |
-
-## Engine-specific setup
+<Callout type="warn">
+  The configuration type still accepts the names `mineru`, `doc2x`, `grobid`, and `local`, but the current PDF parser dispatcher only implements `open_mineru`. Selecting another value causes an unsupported-engine error when parsing.
+</Callout>
 
 <Cards>
-  <Card title="open_mineru" href="/docs/configuration/pdf-parser/open-mineru" description="Self-hosted MinerU parser for best extraction quality" />
-  <Card title="mineru" href="/docs/configuration/pdf-parser/mineru" description="Hosted MinerU Cloud API" />
-  <Card title="local" href="/docs/configuration/pdf-parser/local" description="Built-in lightweight parser with no external dependencies" />
-  <Card title="doc2x" href="/docs/configuration/pdf-parser/doc2x" description="Doc2X Cloud API parser" />
-  <Card title="grobid" href="/docs/configuration/pdf-parser/grobid" description="Self-hosted academic paper structure extraction" />
+  <Card title="Open MinerU" href="/docs/configuration/pdf-parser/open-mineru" description="Configure a self-hosted PDF parsing API" />
 </Cards>

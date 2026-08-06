@@ -12,15 +12,13 @@ description: 配置自托管 MinerU 解析器
 engine = "open_mineru"
 
 [pdf_parser.open_mineru]
-api_url    = "http://localhost:8000"
-server_url = "http://localhost:30000"
-timeout    = 600
+api_url = "http://localhost:8000"
+timeout = 600
 ```
 
 | Key | 说明 |
 | --- | --- |
 | `api_url` | MinerU API 网关地址。 |
-| `server_url` | MinerU 模型服务器地址。 |
 | `timeout` | 请求超时时间，单位为秒。处理大型 PDF 时请增大该值。 |
 
 ## 部署 MinerU
@@ -31,7 +29,6 @@ timeout    = 600
 docker run -d \
   --gpus all \
   -p 8000:8000 \
-  -p 30000:30000 \
   opendatalab/mineru-service:latest
 ```
 

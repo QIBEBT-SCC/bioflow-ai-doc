@@ -3,12 +3,12 @@ title: 基础设施服务
 description: 配置 PostgreSQL、Redis、RabbitMQ、对象存储和 Milvus
 ---
 
-以下服务均由 `docker-compose.yml` 管理。默认本地部署**无需修改**，`config.example.toml` 与 `docker-compose.yml` 已保持一致。
+以下服务均由项目根目录的 `docker-compose.yml` 管理。`auto-init` 会根据 Docker 或 Podman 模板生成该文件，并使宿主机端口与 `config.toml` 保持一致。默认本地部署无需手动修改连接地址。
 
 仅当您需要修改密码、解决端口冲突，或用外部服务替换内置服务时，才需要继续阅读。
 
 <Callout type="warn">
-  `config.toml` 和 `docker-compose.yml` 必须始终保持同步。只在一处修改端口或密码而未更新另一处，会导致应用无法连接。
+  手动修改端口或凭据时，`config.toml` 和 `docker-compose.yml` 必须保持同步。新安装优先使用 `uv run bioflow-ai auto-init` 自动处理端口冲突。
 </Callout>
 
 ---
@@ -74,6 +74,7 @@ db_url = "postgresql+psycopg://bioflow_ai:123456@127.0.0.1:15432/bioflow_ai"
 llm_cache     = "redis://localhost:6379/0"
 monitor_cache = "redis://localhost:6379/2"
 api_cache     = "redis://localhost:6379/2"
+notification_cache = "redis://localhost:6379/2"
 ```
 
 三者共享同一个 Redis 实例，并通过数据库索引隔离。
@@ -83,6 +84,7 @@ api_cache     = "redis://localhost:6379/2"
 | `llm_cache` | 0 | LLM 响应缓存 |
 | `monitor_cache` | 2 | 任务进度状态 |
 | `api_cache` | 2 | API 层缓存 |
+| `notification_cache` | 2 | 通知状态缓存 |
 
 Celery 结果后端（索引 1）在 `[celery]` 下单独配置。
 
@@ -96,7 +98,7 @@ redis-db:
 
 ### 解决端口冲突
 
-修改主机侧端口（例如 `"16379:6379"`），并更新 `config.toml` 中**所有** Redis URL：`llm_cache`、`monitor_cache`、`api_cache`、`[celery].backend` 和 `[develop].checkpoint_url`。
+修改主机侧端口（例如 `"16379:6379"`），并更新 `config.toml` 中**所有** Redis URL：`llm_cache`、`monitor_cache`、`api_cache`、`notification_cache`、`[celery].backend` 和 `[develop].checkpoint_url`。
 
 ### 使用外部 Redis 实例
 
@@ -132,20 +134,17 @@ rabbitmq-db:
     RABBITMQ_DEFAULT_PASS: 123456        # → broker 中的 password
   ports:
     - "5672:5672"                        # → broker 中的 port
-    - "15672:15672"                      # 管理界面 (http://localhost:15672)
 ```
 
 ### 修改密码
 
-RabbitMQ 只会在首次启动时读取 `RABBITMQ_DEFAULT_PASS`。要修改已有密码，请清空数据卷：
+RabbitMQ 只会在首次启动时读取 `RABBITMQ_DEFAULT_PASS`。对已初始化的数据卷，请在运行中的服务修改密码：
 
 ```bash
-docker compose down rabbitmq-db
-rm -rf volumes/rabbitmq
-docker compose up -d rabbitmq-db
+docker compose exec rabbitmq-db rabbitmqctl change_password bioflow_ai NEW_PASSWORD
 ```
 
-然后更新 `config.toml` 中的 `broker`。
+然后更新 `config.toml` 中的 `broker`。当前 Compose 模板只映射 AMQP 端口 `5672`，未将 RabbitMQ 管理界面端口映射到宿主机。
 
 ### 解决端口冲突
 
@@ -166,7 +165,7 @@ region         = "us-east-1"
 bucket         = "bioflow-ai"
 access_key     = "minioadmin"
 secret_key     = "minioadmin"
-use_ssl        = false
+use_ssl        = true
 presign_expire = 3600
 ```
 
@@ -180,7 +179,6 @@ rustfs:
     RUSTFS_REGION: us-east-1         # → region
   ports:
     - "9000:9000"                    # → endpoint 中的 port
-    - "9001:9001"                    # Web 控制台（仅浏览器）
 ```
 
 ### 修改凭据
@@ -191,7 +189,7 @@ rustfs:
 
 ### 连接外部 S3 或 MinIO
 
-将 `endpoint` 设为外部 URL，填写匹配的凭据，并注释掉 `rustfs` 服务。HTTPS 端点（AWS S3、Alibaba OSS 等）请设置 `use_ssl = true`。
+将 `endpoint` 设为外部 URL，填写匹配的凭据，并停止不再需要的 `rustfs` 服务。`use_ssl` 是 S3 客户端的 TLS 开关，默认为 `true`；连接明文 HTTP 端点时可设为 `false`。
 
 </Accordion>
 
@@ -233,17 +231,20 @@ Milvus 依赖 `docker-compose.yml` 中的另外两个服务：
 
 ```bash
 # PostgreSQL
-psql "postgresql://bioflow_ai:YOUR_PASS@localhost:5432/bioflow_ai" -c "SELECT 1"
+docker compose exec -T postgres-db pg_isready -h 127.0.0.1 -U bioflow_ai -d bioflow_ai
 
 # Redis
-redis-cli -h localhost -p 6379 ping
+docker compose exec -T redis-db redis-cli ping
 
 # RabbitMQ
-curl -s http://localhost:15672 | head -1
+docker compose exec -T rabbitmq-db rabbitmq-diagnostics -q ping
+
+# etcd
+docker compose exec -T etcd etcdctl endpoint health
 
 # Milvus
-curl -s http://localhost:9091/healthz
+docker compose exec -T standalone curl -fsS http://localhost:9091/healthz
 
 # RustFS / S3
-curl -s http://localhost:9000/health
+docker compose exec -T rustfs curl -fsS http://localhost:9000/health
 ```

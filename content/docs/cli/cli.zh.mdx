@@ -23,6 +23,18 @@ uv run bioflow-ai init rebuild-index --help
 
 ---
 
+## `auto-init` — 交互式系统初始化
+
+```bash
+uv run bioflow-ai auto-init
+```
+
+新部署的推荐入口。该向导可以生成或保留 `config.toml`、同步测试数据、生成并启动 Compose 服务、初始化数据库与向量索引，以及配置 AI Provider、模型和系统角色。
+
+它会等待 PostgreSQL、RustFS 和 Milvus 就绪，但不会启动常驻的 API 服务或 Celery Worker。完整步骤、端口处理和重新运行行为见[自动初始化](/docs/configuration/initialization)。
+
+---
+
 ## `api` — 启动 API 服务器
 
 ```bash

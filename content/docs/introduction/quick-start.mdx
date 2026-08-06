@@ -1,29 +1,19 @@
 ---
 title: Quick Start
-description: Deploy BioFlowAI locally using Docker Compose + uv
+description: Deploy BioFlowAI with the automatic initialisation wizard
 icon: Rocket
 ---
 
-This guide walks through the default installation path using Docker and the `uv` package manager. The entire stack — database, message broker, vector store, object storage, and web UI — is managed via a single `docker-compose.yml`.
+This guide uses `uv` and Docker for the default local deployment. Podman users should first read <DynamicLink href="/[lang]/docs/configuration/using-podman">Using Podman</DynamicLink>.
 
-## System Dependencies
+## System dependencies
 
-| Requirement | Notes |
+| Requirement | Purpose |
 | --- | --- |
-| **[uv](https://docs.astral.sh/uv/)** | Python package manager used by this project |
-| **Docker** | For running infrastructure services and bioinformatics tools |
+| **[uv](https://docs.astral.sh/uv/)** | Python packages and command environment |
+| **Docker + Docker Compose** | PostgreSQL, Redis, RabbitMQ, RustFS, Milvus, the Web UI, and tool containers |
 
-Install `uv` if you don't have it:
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-<Callout type="info">
-  Want to use Podman as the container runtime instead of Docker? See <DynamicLink href="/[lang]/docs/configuration/using-podman">Using Podman</DynamicLink>.
-</Callout>
-
-## Step 1 — Clone and Install Dependencies
+## Step 1 — Clone and install
 
 ```bash
 git clone https://github.com/QIBEBT-SCC/bioflow-ai.git
@@ -31,99 +21,30 @@ cd bioflow-ai
 uv sync
 ```
 
-This creates a virtual environment and installs all Python dependencies declared in `pyproject.toml`.
-
-## Step 2 — Create the Configuration File
-
-Copy the example config and edit the required fields:
+## Step 2 — Run automatic initialisation
 
 ```bash
-cp config.example.toml config.toml
+uv run bioflow-ai auto-init
 ```
 
-For a default local deployment, the only values you **must** change are the JWT secret key and, optionally, the server port and network proxy settings:
+The wizard:
 
-```toml title="config.toml"
-[security]
-secret_key = "replace-with-a-long-random-string"  # [!code highlight]
-access_token_expire_minutes = 1440
+1. Generates `config.toml` with network, storage, resource, container runtime, embedding model, and PDF parser settings.
+2. Checks default ports and, when necessary, advances to available ports while synchronising configuration and Compose.
+3. Optionally downloads test data.
+4. Generates `docker-compose.yml` from the runtime template, starts infrastructure and the Web UI, and waits for key services.
+5. Creates database tables, the default administrator, preset tool data, and Milvus vector indexes.
+6. Configures DeepSeek, OpenAI, or an OpenAI-compatible Custom provider and assigns system model roles.
 
-[network]
-host = "0.0.0.0"
-port = 8000
-proxy_type = "http"
-proxy_host = "localhost"
-proxy_port = 7890 # [!code highlight]
-use_proxy = true # [!code highlight]
-```
+Some stages ask for confirmation before running. See <DynamicLink href="/[lang]/docs/configuration/initialization">Automatic Initialisation</DynamicLink> for the full workflow and rerun behaviour.
 
-<Callout type="info">
-  You can generate `secret_key` with `openssl rand -hex 32` or a similar command.
+<Callout type="warn">
+  Initialisation may download test data and missing preset files from Hugging Face. Configure a proxy in the wizard when running in a restricted network.
 </Callout>
 
-<Callout type="warning">
-  If you change `network.port`, also update the `web-ui` environment variables in `docker-compose.yml`. See the relevant section in the <DynamicLink href="/[lang]/docs/configuration">Configuration reference</DynamicLink>.
-</Callout>
+## Step 3 — Start backend processes
 
-Some images stored in docker.io repositories may require authentication when pulled, so you also need to set your docker.io username and password:
-
-```toml title="config.toml"
-[docker]
-container = "docker"
-username = "" # [!code highlight]
-password = "" # [!code highlight]
-```
-
-For the full list of configuration options, see the <DynamicLink href="/[lang]/docs/configuration">Configuration reference</DynamicLink>.
-
-## Step 3 — Prepare Storage Volumes
-
-Create the data directory for RustFS (S3-compatible object storage) and update the required ownership:
-
-```bash
-mkdir -p ./volumes/rustfs
-chown -R 10001:10001 ./volumes/rustfs
-```
-
-## Step 4 — Start Infrastructure Services
-
-```bash
-docker compose up -d
-```
-
-This starts the following containers:
-
-| Container | Service | Port |
-| --- | --- | --- |
-| `postgres-db` | PostgreSQL 18 | `5432` |
-| `redis-db` | Redis 8 | `6379` |
-| `rabbitmq-db` | RabbitMQ 4 | `5672` / `15672` (management UI) |
-| `milvus-standalone` | Milvus vector store | `19530` |
-| `rustfs` | Object storage (S3-compatible) | `9000` / `9001` (console) |
-| `etcd` | Milvus metadata store | — |
-| `web-ui` | Frontend web application | `3001` |
-
-Wait until all services report healthy before continuing:
-
-```bash
-docker compose ps
-```
-
-## Step 5 — Initialize the Database
-
-Run the one-time database initialization command to create tables and seed default data:
-
-```bash
-uv run bioflow-ai init system-init
-```
-
-<Callout type="warning">
-  Initialization pulls data files from Hugging Face and may fail if your network connection is unreliable.
-</Callout>
-
-## Step 6 — Start the Application [#system-init]
-
-Open two terminal sessions in the project directory and start each process:
+The wizard does not keep FastAPI or the Celery worker running. Start them in separate terminals:
 
 ```bash
 # Terminal 1 — API server
@@ -135,17 +56,30 @@ uv run bioflow-ai api
 uv run bioflow-ai worker
 ```
 
-The API server starts on port `8000` by default. The web UI at `http://localhost:3001` connects to it automatically.
+The default addresses are:
 
-Open `http://localhost:3001` in your browser. You should see the BioFlowAI login page:
+| Service | Address |
+| --- | --- |
+| Web UI | `http://localhost:3000` |
+| FastAPI | `http://localhost:8000` |
+
+If a default port was occupied, use the replacement port displayed by the wizard.
+
+## Step 4 — Sign in
+
+Open the Web UI and sign in with the initial administrator account:
+
+- Email: `admin@email.com`
+- Password: `admin`
+
+Change the password immediately after the first login. Providers and models configured by the wizard can be maintained in the Web UI model settings, including prices that were not recognised automatically.
 
 ![Home page](/homepage.png)
 
-Log in with the default admin credentials created during [system-init](#system-init), then navigate to **Settings → LLM Models** to configure your first AI provider before running any AI-assisted workflows.
-
-## Next Steps
+## Next steps
 
 <Cards>
-  <Card title="What is BioFlowAI" href="/docs/introduction/what-is-bioflow-ai" description="Learn the core ideas behind BioFlowAI" />
-  <Card title="Configuration" href="/docs/configuration" description="A Detailed Understanding of the Configuration File" />
+  <Card title="Automatic Initialisation" href="/docs/configuration/initialization" description="Understand each wizard stage and rerun behaviour" />
+  <Card title="Configuration" href="/docs/configuration" description="Review the actual config.toml fields and defaults" />
+  <Card title="CLI Reference" href="/docs/cli" description="Start services and maintain database and vector indexes" />
 </Cards>

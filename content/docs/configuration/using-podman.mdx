@@ -1,32 +1,17 @@
 ---
 title: Using Podman
-description: Configure Podman as the System Container Runtime
+description: Configure Podman with the automatic initialisation wizard
 ---
 
-BioFlowAI uses Docker Compose by default to start infrastructure services such as PostgreSQL, Redis, RabbitMQ, RustFS, Milvus, and Web UI. If the deployment environment makes it inconvenient to install Docker or if a daemonless, rootless container runtime is preferred, Podman can be used instead.
+BioFlowAI can use Podman for project dependencies and the Podman API for bioinformatics tool containers. The repository includes a dedicated `deploy/podman/docker-compose.yml` template, so the Docker template does not need manual edits.
 
 <Callout type="info">
-  This page is primarily intended for Linux environments. On macOS and Windows, Podman typically runs inside a Podman machine virtual machine, resulting in different networking and mount behaviors; for a quick local trial, Docker Desktop is usually simpler.
+  This page primarily covers rootless Podman on Linux. Podman on macOS and Windows usually runs through Podman machine, where host networking and mount paths may differ.
 </Callout>
 
-## What is Podman?
+## Install Podman and Compose
 
-Podman is an OCI-compliant container runtime that can replace Docker. It can run Docker images directly and supports a CLI similar to Docker, for example `podman run`, `podman ps`, and `podman logs`.
-
-The main differences between Podman and Docker include:
-
-| Feature | Docker | Podman |
-| --- | --- | --- |
-| Background Service | Depends on Docker daemon | Daemonless by default |
-| Permission Model | Common deployments require root or docker group privileges | Supports rootless containers |
-| Compose Support | Built-in `docker compose` | Typically uses `podman-compose` or `podman compose` |
-| API Socket | Provides Docker socket by default | Requires manual start of Podman socket |
-
-The BioFlowAI backend manages some tool containers through the container runtime. Therefore, when switching to Podman, in addition to starting the Compose services, the Podman socket must also be enabled.
-
-## Installing Podman and podman-compose
-
-First, install Podman itself and the Compose compatibility tool. Package names may vary slightly between distributions:
+Install Podman and a Compose provider for `podman compose`. Distributions may also package `podman-compose` directly:
 
 ```bash tab="Ubuntu / Debian"
 sudo apt update
@@ -41,189 +26,101 @@ sudo dnf install -y podman podman-compose
 sudo pacman -S podman podman-compose
 ```
 
-After installation, confirm that the commands are available:
+Verify the commands:
 
 ```bash
 podman --version
-podman-compose --version
+podman compose version
 ```
 
-If the distribution does not provide `podman-compose`, it can also be installed using the Python package manager:
+`auto-init` prefers `podman compose`; when it is unavailable, the wizard automatically tries `podman-compose`.
 
-```bash
-pipx install podman-compose
-```
-
-## Installing BioFlowAI Podman Dependencies
-
-BioFlowAI installs Docker backend dependencies by default. When using Podman, the optional `podman` dependency must be installed additionally:
+## Install the optional Python dependency
 
 ```bash
 uv sync --extra podman
 ```
 
-This dependency is required for the backend service to manage containers via the Podman API. Installing only the system-level Podman command is not sufficient.
+This dependency lets the backend create and run tool containers through the Podman API.
 
-## Starting the Podman Socket
+## Start the Podman socket
 
-The backend requires access to the Podman API to manage tool containers. In rootless mode, the Podman socket for the current user can be started as follows:
-
-```bash
-podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock > /dev/null 2>&1 &
-```
-
-Use the command below to check if the socket has been created:
-
-```bash
-ls /run/user/$(id -u)/podman/podman.sock
-```
-
-If the socket should be started automatically with the user session, a systemd user service can be used:
+For rootless Podman with systemd, use the user socket:
 
 ```bash
 systemctl --user enable --now podman.socket
 ```
 
-After enabling it, the default socket path is usually:
+Verify it:
 
 ```bash
-/run/user/$(id -u)/podman/podman.sock
+podman info
+ls /run/user/$(id -u)/podman/podman.sock
+```
+
+Without a systemd user service, start it for the current session:
+
+```bash
+podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock
 ```
 
 <Callout type="warn">
-  Ensure that the user running the BioFlowAI backend is the same user who starts the Podman socket. A rootless Podman socket is typically only accessible to the current user.
+  Run the backend and the Podman socket as the same user. A backend managed by systemd must also retain the correct `XDG_RUNTIME_DIR`.
 </Callout>
 
-## Modifying BioFlowAI Configuration
-
-First, switch the container runtime to Podman in `config.toml`. Additionally, because Podman has slight compatibility differences with some Docker Compose syntax, `docker-compose.yml` also needs modification. The changes involve two main areas:
-
-1. The `security_opt` for the Milvus service needs to use a format recognizable by Podman
-2. The Web UI backend access must explicitly use the host machine gateway address
-
-```toml tab="config.toml"
-[docker]
-container = "podman" # [!code highlight]
-```
-
-```yaml tab="docker-compose.yml"
-services:
-  standalone:
-    container_name: milvus-standalone
-    image: docker.io/milvusdb/milvus:v2.6.14
-    command: [ "milvus", "run", "standalone" ]
-    security_opt:
-      - seccomp:unconfined # [!code --]
-      - seccomp=unconfined # [!code ++]
-
-  web-ui:
-    image: ghcr.io/qibebt-scc/bioflow-ai-web:0.2.4
-    environment:
-      BACKEND_API_URL: http://host.docker.internal:8003/api/v1
-    extra_hosts:
-      - "host.docker.internal:host-gateway" # [!code --]
-      - "host.docker.internal:10.0.2.2" # [!code ++]
-```
-
-## Starting Services
-
-After completing the configuration, start the infrastructure services using `podman-compose`:
+## Run initialisation
 
 ```bash
-podman-compose up -d
+uv run bioflow-ai auto-init
 ```
 
-Check the service status:
+Choose `podman` at the container-runtime prompt. The wizard then:
+
+1. Writes `container = "podman"` to `config.toml`.
+2. Generates the root `docker-compose.yml` from `deploy/podman/docker-compose.yml`.
+3. Synchronises ports and the Web UI backend URL.
+4. Starts services with the available Podman Compose command.
+5. Waits for PostgreSQL, RustFS, and Milvus.
+
+Do not apply the manual `security_opt` or `host.docker.internal` replacements described by older documentation; the Podman template now owns those runtime differences.
+
+## Daily commands
 
 ```bash
-podman-compose ps
+podman compose ps
+podman compose logs -f standalone
+podman compose up -d
 ```
 
-View logs for a specific service:
+If the wizard reported a fallback to `podman-compose`, replace `podman compose` with `podman-compose` in these commands.
+
+## Troubleshooting
+
+### Backend cannot reach the Podman API
 
 ```bash
-podman-compose logs -f standalone
-```
-
-## Verifying Connectivity
-
-Once the containers are started, check whether the key services are accessible:
-
-```bash
-# PostgreSQL
-podman exec postgres-db pg_isready -U bioflow_ai
-
-# Redis
-podman exec redis-db redis-cli ping
-
-# RabbitMQ Management Interface
-curl -s http://localhost:15672 | head -1
-
-# Milvus
-curl -s http://localhost:9091/healthz
-
-# RustFS / S3
-curl -s http://localhost:9000/health
-```
-
-If these checks pass, proceed to start the BioFlowAI backend and frontend services.
-
-## Common Issues
-
-### Backend Cannot Connect to Podman Socket
-
-Confirm that the socket has been started and that the backend process runs with the same user:
-
-```bash
+systemctl --user status podman.socket
+echo "$XDG_RUNTIME_DIR"
 ls -l /run/user/$(id -u)/podman/podman.sock
 ```
 
-If the backend service is managed by systemd, ensure that the correct `XDG_RUNTIME_DIR` is set in the service configuration, for example:
+Confirm that the user running the API and worker can access the socket.
+
+### Compose is unavailable
+
+Check both supported forms:
 
 ```bash
-XDG_RUNTIME_DIR=/run/user/1000
+podman compose version
+podman-compose --version
 ```
 
-Replace `1000` with the user ID running Podman.
+Only one needs to be available.
 
-### Web UI Cannot Access Backend API
+### Web UI cannot reach the API
 
-First, check whether `extra_hosts` in `docker-compose.yml` has been changed to:
+Confirm that FastAPI was started manually and that `[network].host` is `0.0.0.0`. If the API port was changed manually after initialisation, synchronise the Web UI `BACKEND_API_URL` in `docker-compose.yml`.
 
-```yaml
-extra_hosts:
-  - "host.docker.internal:10.0.2.2"
-```
+## Switch back to Docker
 
-Also confirm that the backend service on the host machine is listening on port `8003` and allows connections from the container network.
-
-### Milvus Fails to Start
-
-If the Milvus logs show errors related to seccomp or permissions, verify that `security_opt` uses:
-
-```yaml
-security_opt:
-  - seccomp=unconfined
-```
-
-After the modification, recreate the service:
-
-```bash
-podman-compose up -d --force-recreate standalone
-```
-
-
-## Switching Back to Docker
-
-To switch back to Docker, change `config.toml` back to Docker and revert the two Podman compatibility modifications in `docker-compose.yml`:
-
-```toml
-[docker]
-container = "docker"
-```
-
-Then restart the services using Docker Compose:
-
-```bash
-docker compose up -d
-```
+Run `auto-init` again and choose Docker, or change `[docker].container` to `docker`, rerun the wizard, and keep the existing configuration. The wizard regenerates Compose from the Docker template.

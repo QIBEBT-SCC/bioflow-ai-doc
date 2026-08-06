@@ -1,29 +1,19 @@
 ---
 title: 快速开始
-description: 使用 Docker Compose + uv 本地部署部署 BioFlowAI
+description: 使用自动初始化向导部署 BioFlowAI
 icon: Rocket
 ---
 
-本指南介绍了如何使用 Docker 和 `uv` 包管理器的默认安装路径。整个技术栈（包括数据库、消息代理、向量存储、对象存储和 Web 界面）均通过一个 `docker-compose.yml` 文件进行管理。
+本指南使用 `uv` 和 Docker 完成默认本地部署。Podman 用户请先阅读 <DynamicLink href="/[lang]/docs/configuration/using-podman">使用 Podman</DynamicLink>。
 
 ## 系统依赖
 
 | 需求 | 说明 |
 | --- | --- |
-| **[uv](https://docs.astral.sh/uv/)** | 本项目使用的 Python 包管理器 |
-| **Docker** | 用于运行基础设施服务与生物信息学工具 |
+| **[uv](https://docs.astral.sh/uv/)** | Python 包与命令运行环境 |
+| **Docker + Docker Compose** | PostgreSQL、Redis、RabbitMQ、RustFS、Milvus、Web UI 和工具容器 |
 
-若未安装 `uv`，请执行以下命令：
-
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-```
-
-<Callout type="info">
-  想要使用 Podman 作为容器运行时而非 Docker？请参考 <DynamicLink href="/[lang]/docs/configuration/using-podman">使用 Podman</DynamicLink> 部分。
-</Callout>
-
-## 第一步 — 克隆仓库并安装依赖
+## 第一步 — 克隆并安装
 
 ```bash
 git clone https://github.com/QIBEBT-SCC/bioflow-ai.git
@@ -31,122 +21,65 @@ cd bioflow-ai
 uv sync
 ```
 
-此操作将创建虚拟环境并安装 `pyproject.toml` 中声明的所有 Python 依赖项。
-
-## 第二步 — 创建配置文件
-
-复制示例配置并编辑所需字段：
+## 第二步 — 运行自动初始化
 
 ```bash
-cp config.example.toml config.toml
+uv run bioflow-ai auto-init
 ```
 
-对于默认的本地部署，您**必须**修改的仅有 JWT 密钥，以及（可选）服务器端口和网络代理配置：
+向导会依次完成：
 
-```toml title="config.toml"
-[security]
-secret_key = "replace-with-a-long-random-string"  # [!code highlight]
-access_token_expire_minutes = 1440
+1. 生成 `config.toml`，配置网络、存储、资源、容器运行时、嵌入模型和 PDF 解析器。
+2. 检查默认端口；冲突时自动顺延，并同步配置与 Compose。
+3. 可选下载测试数据。
+4. 从运行时模板生成 `docker-compose.yml`，启动基础设施和 Web UI，并等待关键服务就绪。
+5. 创建数据库表、默认管理员、预置工具数据和 Milvus 向量索引。
+6. 配置 DeepSeek、OpenAI 或 OpenAI-compatible Custom Provider，并分配系统模型角色。
 
-[network]
-host = "0.0.0.0"
-port = 8000
-proxy_type = "http"
-proxy_host = "localhost"
-proxy_port = 7890 # [!code highlight]
-use_proxy = true # [!code highlight]
-```
-<Callout type="info">
-  secret_key 可以使用 `openssl rand -hex 32` 或其他类似命令生成。
-</Callout>
-<Callout type="warning">
-  若修改了`network.port`，需要同步修改docker-compose.yml中的web-ui环境变量，详见<DynamicLink href="/[lang]/docs/configuration">配置参考</DynamicLink>的相关章节。
+部分步骤会在执行前询问是否继续。详细行为和重新运行注意事项见 <DynamicLink href="/[lang]/docs/configuration/initialization">自动初始化</DynamicLink>。
+
+<Callout type="warn">
+  初始化可能从 Hugging Face 下载测试数据和缺失的预置文件。受限网络环境请在向导中配置代理。
 </Callout>
 
+## 第三步 — 启动后端进程
 
-考虑到部分docker.io仓库存储的镜像在拉取时需要认证身份，还需要设置 docker.io 的用户名和密码：
-
-```toml title="config.toml"
-[docker]
-container = "docker"
-username = "" # [!code highlight]
-password = "" # [!code highlight]
-```
-
-完整的配置选项列表请参阅<DynamicLink href="/[lang]/docs/configuration">配置参考</DynamicLink>。
-
-## 第三步 — 准备存储卷
-
-为 RustFS（兼容 S3 的对象存储）创建数据目录并更新所有权：
+初始化向导不会常驻运行 FastAPI 和 Celery Worker。请在两个终端中分别启动：
 
 ```bash
-mkdir -p ./volumes/rustfs
-chown -R 10001:10001 ./volumes/rustfs
-```
-
-## 第四步 — 启动基础设施服务
-
-```bash
-docker compose up -d
-```
-
-此操作将启动以下容器：
-
-| 容器 | 服务 | 端口 |
-| --- | --- | --- |
-| `postgres-db` | PostgreSQL 18 | `5432` |
-| `redis-db` | Redis 8 | `6379` |
-| `rabbitmq-db` | RabbitMQ 4 | `5672` / `15672`（管理界面） |
-| `milvus-standalone` | Milvus 向量存储 | `19530` |
-| `rustfs` | 对象存储（兼容 S3） | `9000` / `9001`（控制台） |
-| `etcd` | Milvus 元数据存储 | — |
-| `web-ui` | 前端 Web 应用 | `3001` |
-
-在继续操作前，请等待所有服务报告健康状态：
-
-```bash
-docker compose ps
-```
-
-## 第五步 — 初始化数据库
-
-运行一次性数据库初始化命令，以创建表并填充默认数据：
-
-```bash
-uv run bioflow-ai init system-init
-```
-
-<Callout type="warning">
-  初始化操作时会从 huggingface 拉取数据文件，若网络环境不佳可能失败。
-</Callout>
-
-## 第六步 — 启动应用 [#system-init]
-
-在项目目录中打开两个终端会话，分别启动以下进程：
-
-```bash
-# 终端 1 — API 服务器
+# 终端 1 — API 服务
 uv run bioflow-ai api
 ```
 
 ```bash
-# 终端 2 — Celery 工作节点
+# 终端 2 — Celery Worker
 uv run bioflow-ai worker
 ```
 
-API 服务器默认在端口 `8000` 上启动。位于 `http://localhost:3001` 的 Web 界面将自动连接该服务器。
+默认地址如下：
 
-在浏览器中打开 `http://localhost:3001`。您应能看到 BioFlowAI 的登录页面：
+| 服务 | 地址 |
+| --- | --- |
+| Web UI | `http://localhost:3000` |
+| FastAPI | `http://localhost:8000` |
+
+如果默认端口已被占用，请使用初始化向导显示的新端口。
+
+## 第四步 — 登录
+
+打开 Web UI，使用以下初始管理员登录：
+
+- 邮箱：`admin@email.com`
+- 密码：`admin`
+
+首次登录后请立即修改密码。向导中已经配置的 Provider 和模型可在 Web UI 的模型设置页面继续维护，包括补充未自动识别的价格。
 
 ![首页](/homepage.png)
-
-使用 [system-init](#system-init) 期间创建的默认管理员凭据登录，然后导航至**设置 → LLM 模型**，在运行任何 AI 辅助工作流之前配置您的第一个 AI 提供商。
-
-
 
 ## 后续步骤
 
 <Cards>
-  <Card title="什么是 BioFlowAI" href="/zh/introduction/what-is-bioflow-ai" description="了解 BioFlowAI 的核心概念" />
-  <Card title="配置文件" href="/zh/docs/configuration" description="详细修改配置文件" />
+  <Card title="自动初始化" href="/docs/configuration/initialization" description="了解向导的每个阶段和重新运行行为" />
+  <Card title="配置文件" href="/docs/configuration" description="查看 config.toml 的实际字段和默认值" />
+  <Card title="CLI 参考" href="/docs/cli" description="启动服务以及维护数据库和向量索引" />
 </Cards>

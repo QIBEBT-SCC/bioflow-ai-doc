@@ -1,32 +1,17 @@
 ---
 title: 使用 Podman
-description: 配置使用 Podman 作为系统容器运行时
+description: 使用自动初始化向导配置 Podman
 ---
 
-BioFlowAI 默认使用 Docker Compose 启动 PostgreSQL、Redis、RabbitMQ、RustFS、Milvus 和 Web UI 等基础设施服务。如果部署环境不方便安装 Docker，或希望使用无守护进程、rootless 的容器运行时，可以改用 Podman。
+BioFlowAI 可以用 Podman 启动项目依赖，并通过 Podman API 运行生物信息学工具容器。项目已包含独立的 `deploy/podman/docker-compose.yml` 模板，不需要手动修改 Docker 模板。
 
 <Callout type="info">
-  本页主要面向 Linux 环境。macOS 和 Windows 上的 Podman 通常运行在 Podman machine 虚拟机中，网络与挂载行为会有所不同；如果只是本地快速试用，Docker Desktop 通常更简单。
+  本页主要面向 Linux 上的 rootless Podman。macOS 和 Windows 通常通过 Podman machine 运行，宿主机网络和挂载路径可能不同。
 </Callout>
 
-## 什么是 Podman？
+## 安装 Podman 和 Compose
 
-Podman 是一个兼容 OCI 标准的容器运行时，可以用于替代 Docker。它可以直接运行 Docker 镜像，也支持与 Docker 类似的 CLI，例如 `podman run`、`podman ps` 和 `podman logs`。
-
-与 Docker 相比，Podman 的主要差异包括：
-
-| 项目 | Docker | Podman |
-| --- | --- | --- |
-| 后台服务 | 依赖 Docker daemon | 默认无守护进程 |
-| 权限模型 | 常见部署需要 root 或 docker 组权限 | 支持 rootless 容器 |
-| Compose 支持 | 内置 `docker compose` | 通常使用 `podman-compose` 或 `podman compose` |
-| API Socket | 默认提供 Docker socket | 手动启动 Podman socket |
-
-BioFlowAI 的后端会通过容器运行时管理部分工具容器，因此改用 Podman 时除了启动 Compose 服务，还需要启用 Podman socket。
-
-## 安装 Podman 和 podman-compose
-
-请先安装 Podman 本体和 Compose 兼容工具。不同发行版的包名可能略有差异：
+安装 Podman 以及 `podman compose` 可用的 Compose Provider。发行版也可以直接提供 `podman-compose`：
 
 ```bash tab="Ubuntu / Debian"
 sudo apt update
@@ -41,189 +26,101 @@ sudo dnf install -y podman podman-compose
 sudo pacman -S podman podman-compose
 ```
 
-安装完成后确认命令可用：
+验证命令：
 
 ```bash
 podman --version
-podman-compose --version
+podman compose version
 ```
 
-如果发行版未提供 `podman-compose`，也可以使用 Python 包管理器安装：
+`auto-init` 优先使用 `podman compose`；如果该命令不可用，会自动尝试 `podman-compose`。
 
-```bash
-pipx install podman-compose
-```
-
-## 安装 BioFlowAI 的 Podman 依赖
-
-BioFlowAI 默认安装 Docker 后端依赖。使用 Podman 时，需要额外安装 `podman` 可选依赖：
+## 安装 Python 可选依赖
 
 ```bash
 uv sync --extra podman
 ```
 
-该依赖用于让后端服务通过 Podman API 管理容器。仅安装系统级 Podman 命令是不够的。
+该可选依赖用于后端通过 Podman API 创建和运行工具容器。
 
 ## 启动 Podman Socket
 
-后端管理工具容器时需要访问 Podman API。rootless 模式下可以启动当前用户的 Podman socket：
-
-```bash
-podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock > /dev/null 2>&1 &
-```
-
-可以用下面的命令检查 socket 是否已经创建：
-
-```bash
-ls /run/user/$(id -u)/podman/podman.sock
-```
-
-如果希望 socket 随用户会话自动启动，可以使用 systemd user service：
+rootless 模式推荐使用 systemd user socket：
 
 ```bash
 systemctl --user enable --now podman.socket
 ```
 
-启用后，默认 socket 路径通常也是：
+验证：
 
 ```bash
-/run/user/$(id -u)/podman/podman.sock
+podman info
+ls /run/user/$(id -u)/podman/podman.sock
+```
+
+如果没有 systemd user service，可以在当前会话手动启动：
+
+```bash
+podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock
 ```
 
 <Callout type="warn">
-  请确认运行 BioFlowAI 后端的用户与启动 Podman socket 的用户一致。rootless Podman 的 socket 通常只对当前用户可用。
+  后端进程和 Podman socket 应由同一个用户运行。使用 systemd 部署后端时，还要保留正确的 `XDG_RUNTIME_DIR`。
 </Callout>
 
-## 修改 BioFlowAI 配置
-
-首先需要在 `config.toml` 中将容器运行时切换为 Podman。同时由于 Podman 对部分 Docker Compose 写法的兼容性略有差异，还需要修改 `docker-compose.yml`，主要包括以下两处：
-
-1. Milvus 服务的 `security_opt` 需要改成 Podman 可识别的写法
-2. Web UI 访问后端需要显式使用宿主机网关地址
-
-```toml tab="config.toml"
-[docker]
-container = "podman" # [!code highlight]
-```
-
-```yaml tab="docker-compose.yml"
-services:
-  standalone:
-    container_name: milvus-standalone
-    image: docker.io/milvusdb/milvus:v2.6.14
-    command: [ "milvus", "run", "standalone" ]
-    security_opt:
-      - seccomp:unconfined # [!code --]
-      - seccomp=unconfined # [!code ++]
-
-  web-ui:
-    image: ghcr.io/qibebt-scc/bioflow-ai-web:0.2.4
-    environment:
-      BACKEND_API_URL: http://host.docker.internal:8003/api/v1
-    extra_hosts:
-      - "host.docker.internal:host-gateway" # [!code --]
-      - "host.docker.internal:10.0.2.2" # [!code ++]
-```
-
-## 启动服务
-
-完成配置后，使用 `podman-compose` 启动基础设施服务：
+## 运行初始化
 
 ```bash
-podman-compose up -d
+uv run bioflow-ai auto-init
 ```
 
-查看服务状态：
+在“容器运行时”中选择 `podman`。向导将：
+
+1. 在 `config.toml` 中写入 `container = "podman"`。
+2. 从 `deploy/podman/docker-compose.yml` 生成根目录 `docker-compose.yml`。
+3. 同步端口和 Web UI 后端地址。
+4. 使用可用的 Podman Compose 命令启动服务。
+5. 等待 PostgreSQL、RustFS 和 Milvus 就绪。
+
+不要再按旧文档手动替换 `security_opt` 或 `host.docker.internal`；这些差异由 Podman 模板统一管理。
+
+## 日常命令
 
 ```bash
-podman-compose ps
+podman compose ps
+podman compose logs -f standalone
+podman compose up -d
 ```
 
-查看某个服务日志：
-
-```bash
-podman-compose logs -f standalone
-```
-
-## 验证连接
-
-容器启动后，可以检查关键服务是否可访问：
-
-```bash
-# PostgreSQL
-podman exec postgres-db pg_isready -U bioflow_ai
-
-# Redis
-podman exec redis-db redis-cli ping
-
-# RabbitMQ 管理界面
-curl -s http://localhost:15672 | head -1
-
-# Milvus
-curl -s http://localhost:9091/healthz
-
-# RustFS / S3
-curl -s http://localhost:9000/health
-```
-
-如果这些检查通过，再启动 BioFlowAI 后端和前端服务。
+如果向导提示已回退到 `podman-compose`，将上述命令中的 `podman compose` 替换为 `podman-compose`。
 
 ## 常见问题
 
-### 后端无法连接 Podman socket
-
-请确认 socket 已启动，并且后端进程使用同一个用户运行：
+### 后端无法连接 Podman API
 
 ```bash
+systemctl --user status podman.socket
+echo "$XDG_RUNTIME_DIR"
 ls -l /run/user/$(id -u)/podman/podman.sock
 ```
 
-如果使用 systemd 管理后端服务，需要确保服务中设置了正确的 `XDG_RUNTIME_DIR`，例如：
+确认运行 API 和 Worker 的用户有权限访问该 socket。
+
+### Compose 无法运行
+
+分别检查：
 
 ```bash
-XDG_RUNTIME_DIR=/run/user/1000
+podman compose version
+podman-compose --version
 ```
 
-其中 `1000` 应替换为运行 Podman 的用户 ID。
+只需其中一种可用。
 
-### Web UI 无法访问后端 API
+### Web UI 无法访问 API
 
-请优先检查 `docker-compose.yml` 中的 `extra_hosts` 是否已经改为：
-
-```yaml
-extra_hosts:
-  - "host.docker.internal:10.0.2.2"
-```
-
-同时确认宿主机上的后端服务正在监听 `8003` 端口，并允许来自容器网络的连接。
-
-### Milvus 启动失败
-
-如果 Milvus 日志中出现 seccomp 或权限相关错误，请确认 `security_opt` 使用的是：
-
-```yaml
-security_opt:
-  - seccomp=unconfined
-```
-
-修改后重新创建服务：
-
-```bash
-podman-compose up -d --force-recreate standalone
-```
-
+确认 FastAPI 已手动启动，且 `[network].host` 为 `0.0.0.0`。如果 API 端口在初始化后又被手动修改，需要同步 `docker-compose.yml` 中 Web UI 的 `BACKEND_API_URL`。
 
 ## 切回 Docker
 
-如果需要切回 Docker，只需将 `config.toml` 改回 Docker，并恢复 `docker-compose.yml` 中针对 Podman 的两处兼容性修改：
-
-```toml
-[docker]
-container = "docker"
-```
-
-然后使用 Docker Compose 重新启动服务：
-
-```bash
-docker compose up -d
-```
+重新运行 `auto-init` 并选择 Docker，或将 `[docker].container` 改为 `docker` 后重新运行向导并保留现有配置。向导会从 Docker 模板重新生成 Compose 文件。

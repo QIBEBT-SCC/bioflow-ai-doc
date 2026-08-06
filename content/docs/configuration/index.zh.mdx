@@ -1,48 +1,58 @@
 ---
-title: 概览
-description: config.toml 的常用配置选项
+title: 配置概览
+description: config.toml 的实际配置结构、默认值和覆盖方式
 ---
 
-所有运行时行为均由项目根目录下的单个 `config.toml` 控制。请从提供的模板开始：
+BioFlowAI 从项目根目录读取 `config.toml`。新部署请使用向导生成完整配置：
 
 ```bash
-cp config.example.toml config.toml
+uv run bioflow-ai auto-init
 ```
 
+没有 `config.toml` 时，API、Worker 和依赖全局配置的管理命令不会继续启动。向导说明见[自动初始化](/docs/configuration/initialization)。
+
 <Cards>
-  <Card title="基础设施服务" href="/docs/configuration/infrastructure" description="配置 PostgreSQL、Redis、RabbitMQ、对象存储和 Milvus" />
-  <Card title="PDF 解析器" href="/docs/configuration/pdf-parser" description="选择解析器并配置引擎专属设置" />
-  <Card title="知识库" href="/docs/configuration/knowledge-base" description="配置向量存储和嵌入模型" />
+  <Card title="自动初始化" href="/docs/configuration/initialization" description="生成配置、启动依赖并设置 AI 模型" />
+  <Card title="基础设施服务" href="/docs/configuration/infrastructure" description="PostgreSQL、Redis、RabbitMQ、RustFS 和 Milvus" />
+  <Card title="PDF 解析器" href="/docs/configuration/pdf-parser" description="配置 Open MinerU 解析服务" />
+  <Card title="知识库" href="/docs/configuration/knowledge-base" description="配置 Milvus 和嵌入模型 API" />
 </Cards>
 
----
+## 配置来源优先级
+
+配置优先级从高到低为：环境变量、`.env`、`config.toml`、文件密钥、代码默认值。嵌套环境变量使用双下划线分隔，例如：
+
+```bash
+NETWORK__PORT=8100
+PERSISTENT__DATABASE__DB_URL='postgresql+psycopg://user:pass@host:5432/db'
+```
+
+字段名在 TOML 中使用小写。未知字段会被忽略，因此升级后应对照本页删除已经废弃的配置。
 
 ## 安全 `[security]`
 
 ```toml
 [security]
+secret_key = "generated-random-value"
 algorithm = "HS256"
-secret_key = "Your key"
-access_token_expire_minutes = 1440
+access_token_expire_minutes = 30
+refresh_token_expire_days = 7
+user_cache_ttl_seconds = 300
+cookie_secure = false
+cookie_samesite = "lax"
 ```
 
-| Key | 必填 | 说明 |
+| Key | 默认值 | 说明 |
 | --- | --- | --- |
-| `secret_key` | **是** | JWT 签名密钥。首次使用前必须修改。 |
-| `access_token_expire_minutes` | 否 | 登录令牌有效期，单位为分钟。默认值：1440（1 天）。 |
-| `algorithm` | 否 | JWT 算法。通常无需修改。 |
+| `secret_key` | 自动随机生成 | JWT 与安全数据使用的密钥；部署后不要随意更换。 |
+| `access_token_expire_minutes` | `30` | Access token 有效期。 |
+| `refresh_token_expire_days` | `7` | Refresh token 有效期。 |
+| `user_cache_ttl_seconds` | `300` | 用户权限缓存时间，单位为秒。 |
+| `cookie_secure` | `false` | HTTPS 部署应改为 `true`。 |
+| `cookie_domain` | 未设置 | 可选的 Cookie 域名。 |
+| `cookie_samesite` | `lax` | 可选 `lax`、`strict` 或 `none`。 |
 
-生成强密钥：
-
-```bash
-python -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-<Callout type="warn">
-  切勿使用默认的 `"Your key"` 值。任何使用相同密钥的部署都可以伪造彼此的令牌。
-</Callout>
-
----
+`auto-init` 会生成并持久化随机 `secret_key`，无需手动填写。请勿把生产配置和密钥提交到版本库。
 
 ## 网络 `[network]`
 
@@ -50,6 +60,7 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 [network]
 host = "0.0.0.0"
 port = 8000
+cors_origins = ["http://localhost:3000"]
 use_proxy = false
 proxy_type = "http"
 proxy_host = "localhost"
@@ -58,91 +69,89 @@ proxy_port = 7890
 
 | Key | 说明 |
 | --- | --- |
-| `host` | 监听地址。`0.0.0.0` 绑定所有网络接口。 |
-| `port` | API 服务器端口。 |
-| `use_proxy` | 设为 `true` 后，通过代理转发出站请求。 |
+| `host` | API 监听地址。默认绑定所有接口，使容器化 Web UI 能访问宿主机 API。 |
+| `port` | API 端口；向导会在冲突时自动调整。 |
+| `cors_origins` | 允许浏览器跨域访问 API 的来源列表。 |
+| `use_proxy` | 是否为测试数据下载和支持代理的外部请求启用代理。 |
 | `proxy_type` | `http` 或 `socks5`。 |
-| `proxy_host` / `proxy_port` | 代理服务器地址和端口。 |
+| `proxy_host` / `proxy_port` | 代理主机和端口。 |
 
-当服务器需要在受限网络中访问外部 LLM API 或下载模型时，请启用代理。
+生成 Compose 时，向导会自动将 Web UI 的 `BACKEND_API_URL` 同步到实际 API 端口。
 
----
-
-## 存储路径 `[persistent.storage]`
+## 本地存储 `[persistent.storage]`
 
 ```toml
 [persistent.storage]
-storage_path   = "./storage"
-genome_path    = "./storage/genome"
+storage_path = "./storage"
+genome_path = "./storage/genome"
+bio_db_path = "./storage/bio_dbs"
 test_data_path = "./testdata"
 ```
 
 | Key | 说明 |
 | --- | --- |
-| `storage_path` | 上传文件和分析结果的根目录。 |
-| `genome_path` | 已索引参考基因组的目录。 |
-| `test_data_path` | 内置示例使用的测试数据集路径。 |
+| `storage_path` | 上传文件和分析数据的本地根目录。 |
+| `genome_path` | 参考基因组目录。 |
+| `bio_db_path` | 生物信息学数据库目录。 |
+| `test_data_path` | 自动初始化测试数据的目标目录。 |
 
-相对路径和绝对路径均可使用。若主磁盘空间不足，请将 `storage_path` 指向专用数据卷：
+相对路径以启动命令时的当前项目目录为基准。S3/RustFS 配置见[基础设施服务](/docs/configuration/infrastructure)。
 
-```toml
-storage_path = "/data/bioflow/storage"
-genome_path  = "/data/bioflow/storage/genome"
-```
-
----
-
-## 计算资源限制 `[persistent.resource]`
+## 任务资源 `[persistent.resource]`
 
 ```toml
 [persistent.resource]
-max_thread = 16
-max_mem    = "64G"
+max_thread = 8
+max_mem = "4G"
 ```
 
-| Key | 说明 |
-| --- | --- |
-| `max_thread` | 最大并发线程数。建议设为 CPU 核心数。 |
-| `max_mem` | 传递给工具容器的内存上限。支持 `G` 和 `M` 后缀。 |
-
----
+`max_thread` 和 `max_mem` 是工作流工具的默认资源上限，不代表 API 或 Worker 进程本身的硬限制。
 
 ## 容器运行时 `[docker]`
 
 ```toml
 [docker]
-container   = "docker"
-username    = ""
-password    = ""
-enable_gpu  = false
+container = "docker"
+username = ""
+password = ""
+enable_gpu = false
 gpu_devices = "all"
 ```
 
 | Key | 说明 |
 | --- | --- |
-| `container` | 使用的运行时：`docker` 或 `podman`。 |
-| `username` / `password` | 私有镜像仓库凭据。公共镜像可留空。 |
-| `enable_gpu` | 将 GPU 设备传入工具容器。需要 NVIDIA Container Toolkit。 |
-| `gpu_devices` | 要暴露的 GPU：`"all"` 或逗号分隔列表，例如 `"0,1"`。 |
+| `container` | `docker` 或 `podman`。向导据此选择 Compose 模板和工具容器后端。 |
+| `username` / `password` | docker.io 拉取认证；公共镜像通常可以留空。 |
+| `enable_gpu` | 是否向工具容器传递 GPU。 |
+| `gpu_devices` | `all` 或逗号分隔的设备编号，例如 `0,1`。 |
 
----
+Podman 还需要 Python 可选依赖和 Podman socket，详见[使用 Podman](/docs/configuration/using-podman)。
 
 ## 日志 `[logger]`
 
 ```toml
 [logger]
-level         = "INFO"
+level = "INFO"
 fastapi_level = "INFO"
-boto3_level   = "INFO"
-celery_level  = "INFO"
+celery_level = "INFO"
+boto3_level = "INFO"
+error_level = "ERROR"
 log_retention = "1 week"
-log_rotation  = "10 MB"
+log_rotation = "10 MB"
 ```
 
-| Key | 说明 |
-| --- | --- |
-| `level` | 全局日志级别：`DEBUG`、`INFO`、`WARNING` 或 `ERROR`。 |
-| `log_retention` | 日志文件保留时长。支持自然语言时长：`"1 week"`、`"30 days"`。 |
-| `log_rotation` | 单个日志文件轮转前的最大大小。 |
+日志级别可选 `DEBUG`、`INFO`、`WARNING` 或 `ERROR`。`log_retention` 和 `log_rotation` 控制日志文件保留与轮转。
 
-排查问题时可临时设置 `level = "DEBUG"`。生产环境请恢复为 `"INFO"`。
+## 其他配置段
+
+| 配置段 | 用途 |
+| --- | --- |
+| `[persistent.database]` | PostgreSQL 连接地址 |
+| `[persistent.cache]` | LLM、监控、API 和通知 Redis 缓存 |
+| `[persistent.storage.s3]` | RustFS 或其他 S3-compatible 对象存储 |
+| `[celery]` | RabbitMQ broker 和 Redis 结果后端 |
+| `[knowledge_base]` | Milvus 与嵌入模型 API |
+| `[pdf_parser]` | PDF 解析引擎和超时 |
+| `[develop]` | LangGraph checkpoint Redis 地址 |
+
+这些段的地址会在初始化端口冲突时自动同步。手动修改基础设施端口时，必须同时更新 Compose 的宿主机端口。

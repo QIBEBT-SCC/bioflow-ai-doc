@@ -1,85 +1,47 @@
 ---
 title: Embedding Model
-description: Configure remote API or local embedding inference for the knowledge base
+description: Configure a hosted or self-hosted OpenAI-compatible embedding API
 ---
 
-The embedding model converts tool documentation and parameter descriptions into vectors before they are stored in Milvus. BioFlowAI supports two modes:
-
-- **Remote API**: calls an OpenAI-compatible embedding API. This is the default and does not require a local GPU.
-- **Local model**: runs an embedding model on your own server. This is useful for private networks, air-gapped deployments, or high-throughput indexing.
-
-## Remote API mode
-
-Calls an OpenAI-compatible embedding API to vectorise text.
-
-### config.toml
+BioFlowAI generates vectors through an OpenAI-compatible `/embeddings` API. Hosted APIs and self-hosted services use the same configuration:
 
 ```toml
 [knowledge_base]
-use_local_model = false
-
-[knowledge_base.remote]
-model    = "Qwen/Qwen3-Embedding-4B"
+embedding_model = "Qwen/Qwen3-Embedding-4B"
 base_url = "https://api.siliconflow.cn/v1/"
-api_key  = ""
+api_key = "YOUR_API_KEY"
 ```
 
 | Key | Description |
 | --- | --- |
-| `model` | Embedding model name as accepted by the API. |
-| `base_url` | API base URL. Defaults to [SiliconFlow](https://siliconflow.cn). |
-| `api_key` | API key for the chosen provider. |
+| `embedding_model` | Model name accepted by the API. |
+| `base_url` | OpenAI-compatible API root, usually ending in `/v1/`. |
+| `api_key` | Provider API key; an unauthenticated local service may accept an empty value or require a placeholder. |
 
-To use a different provider, update both `base_url` and `model`. Any service exposing an OpenAI-compatible `/v1/embeddings` endpoint works.
+## Self-hosted example
 
-**SiliconFlow** (default): register at [siliconflow.cn](https://siliconflow.cn) to get an API key.
-
-## Local model mode
-
-Runs the embedding model locally. No text is sent to an external API.
-
-### config.toml
-
-```toml
-[knowledge_base]
-use_local_model = true
-
-[knowledge_base.local]
-model          = "Qwen/Qwen3-Embedding-4B"
-use_modelscope = false
-device         = "cuda:0"
-```
-
-| Key | Description |
-| --- | --- |
-| `model` | Hugging Face model ID (or ModelScope ID when `use_modelscope = true`). |
-| `device` | PyTorch device string: `cuda:0`, `cuda:1`, `cpu`, etc. |
-| `use_modelscope` | Download the model from [ModelScope](https://modelscope.cn) instead of Hugging Face. Recommended in China. |
-
-### Deploy with vLLM
-
-Run an OpenAI-compatible embedding server with vLLM:
+For example, expose an embedding endpoint with vLLM:
 
 ```bash
 CUDA_VISIBLE_DEVICES=0 vllm serve Qwen/Qwen3-Embedding-4B \
-    --served-model-name qwen3-embedding-4b \
-    --host 0.0.0.0 \
-    --port 5000 \
-    --gpu-memory-utilization 0.9 \
-    --max-model-len 20000 \
-    --trust-remote-code
+  --served-model-name qwen3-embedding-4b \
+  --host 0.0.0.0 \
+  --port 5000 \
+  --task embed \
+  --trust-remote-code
 ```
 
-Then point BioFlowAI to the local server through the remote API mode:
+Then update BioFlowAI:
 
 ```toml
 [knowledge_base]
-use_local_model = false
-
-[knowledge_base.remote]
-model    = "qwen3-embedding-4b"
-base_url = "http://localhost:5000/v1/"
-api_key  = "EMPTY"
+embedding_model = "qwen3-embedding-4b"
+base_url = "http://127.0.0.1:5000/v1/"
+api_key = "EMPTY"
 ```
 
-This keeps BioFlowAI talking to an OpenAI-compatible endpoint while the model runs on your own GPU server.
+Existing Milvus vectors are incompatible after changing the embedding model. Rebuild the indexes:
+
+```bash
+uv run bioflow-ai init rebuild-index
+```
