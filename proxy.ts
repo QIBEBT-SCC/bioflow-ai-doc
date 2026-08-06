@@ -6,6 +6,7 @@ import { i18n } from '@/lib/i18n';
 import { docsContentRoute, docsRoute } from '@/lib/shared';
 
 const i18nMiddleware = createI18nMiddleware(i18n);
+const staticFilePattern = /\.[^/]+$/;
 
 const { rewrite: rewriteDocs } = rewritePath(
   `${docsRoute}{/*path}`,
@@ -47,6 +48,14 @@ function rewriteMarkdownRequest(request: NextRequest) {
 }
 
 export default function proxy(request: NextRequest, event: NextFetchEvent) {
+  const { pathname } = request.nextUrl;
+
+  // Public files must bypass locale rewriting. Keep `.md` requests in the
+  // proxy because Fumadocs uses them for negotiated Markdown responses.
+  if (staticFilePattern.test(pathname) && !pathname.endsWith('.md')) {
+    return NextResponse.next();
+  }
+
   return rewriteMarkdownRequest(request) ?? i18nMiddleware(request, event);
 }
 

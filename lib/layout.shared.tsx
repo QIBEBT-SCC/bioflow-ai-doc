@@ -13,8 +13,12 @@ export const translations = i18n
 export function baseOptions(locale: string): BaseLayoutProps {
   return {
     nav: {
-      // JSX supported
-      title: appName,
+      title: (
+        <span className="flex items-center gap-2.5">
+          <img src="/icon.svg" alt="" className="size-8" />
+          <span className="text-[15px] font-semibold tracking-tight">{appName}</span>
+        </span>
+      ),
     },
     githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
   };
