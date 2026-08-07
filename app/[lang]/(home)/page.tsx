@@ -29,7 +29,7 @@ const copy = {
     visualMeta: '节点连接完成，可以开始运行',
     aiPrompt: '帮我设计一个从原始测序数据开始的分析流程',
     aiLabel: 'AI 工作流设计助手',
-    aiPlaceholder: '对话界面截图待补充',
+    aiMeta: '从规划到工具创建，执行过程全程可见',
     proof: ['节点式编排', '容器化执行', '多模型支持'],
     sectionEyebrow: '从想法到结果',
     sectionTitle: '为真实研究流程而设计',
@@ -58,6 +58,10 @@ const copy = {
     runDescription: '查看任务状态、输出文件、运行日志以及节点级执行结果。',
     monitorTitle: '任务资源监控',
     monitorDescription: '检查 CPU、内存与 I/O 使用情况，快速定位性能与运行问题。',
+    assistantBadge: 'AI 原生协作',
+    assistantTitle: '让 AI 直接参与工作流构建',
+    assistantDescription:
+      '在项目内发起需求，查看检索、规划、配置生成与验证步骤，并将新工具节点直接保存到工作流中。',
     journeyEyebrow: '工作方式',
     journeyTitle: '研究目标，不必从环境配置开始',
     steps: [
@@ -95,7 +99,7 @@ const copy = {
     visualMeta: 'Nodes connected and ready to run',
     aiPrompt: 'Design an analysis pipeline starting from raw sequencing data',
     aiLabel: 'AI workflow assistant',
-    aiPlaceholder: 'Conversation screenshot coming soon',
+    aiMeta: 'Follow every step from planning to tool creation',
     proof: ['Node-based design', 'Container execution', 'Multi-model support'],
     sectionEyebrow: 'From intent to insight',
     sectionTitle: 'Built for real research workflows',
@@ -124,6 +128,10 @@ const copy = {
     runDescription: 'Inspect task status, output files, execution logs, and node-level results.',
     monitorTitle: 'Task resource monitoring',
     monitorDescription: 'Review CPU, memory, and I/O usage to identify performance and execution issues quickly.',
+    assistantBadge: 'AI-native collaboration',
+    assistantTitle: 'Bring AI directly into workflow construction',
+    assistantDescription:
+      'Start from a request inside the project, follow search, planning, configuration, and validation, then save a new tool node directly into the workflow.',
     journeyEyebrow: 'How it works',
     journeyTitle: 'Start with the research question, not the environment setup',
     steps: [
@@ -267,7 +275,7 @@ export default async function HomePage({
                 {t.aiLabel}
               </div>
               <p className="mt-3 text-sm leading-5 text-slate-700 dark:text-slate-200">“{t.aiPrompt}”</p>
-              <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">{t.aiPlaceholder}</p>
+              <p className="mt-2 text-[11px] text-slate-400 dark:text-slate-500">{t.aiMeta}</p>
             </div>
 
             <div className="bioflow-float-delayed absolute -right-3 -top-7 hidden rounded-2xl border border-white/80 bg-white/90 p-4 shadow-xl shadow-slate-950/10 backdrop-blur sm:block dark:border-white/10 dark:bg-slate-900/90">
@@ -369,6 +377,27 @@ export default async function HomePage({
                 </div>
               </article>
             </div>
+
+            <article className="bioflow-product-shot grid overflow-hidden rounded-3xl border border-fd-border bg-fd-card shadow-xl shadow-cyan-950/5 lg:grid-cols-[0.65fr_1.35fr]">
+              <div className="flex flex-col justify-center p-7 sm:p-9 lg:p-10">
+                <div className="inline-flex w-fit items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/8 px-3 py-1.5 text-xs font-semibold text-cyan-800 dark:text-cyan-300">
+                  <Bot className="size-3.5" aria-hidden="true" />
+                  {t.assistantBadge}
+                </div>
+                <h3 className="mt-5 text-balance text-2xl font-semibold tracking-tight text-fd-foreground">{t.assistantTitle}</h3>
+                <p className="mt-4 leading-7 text-fd-muted-foreground">{t.assistantDescription}</p>
+              </div>
+              <div className="relative aspect-[1.15/1] overflow-hidden border-t border-fd-border bg-white sm:aspect-[1.35/1] lg:aspect-[1.4/1] lg:border-t-0 lg:border-l">
+                <Image
+                  src="/chat.jpeg"
+                  alt={t.assistantTitle}
+                  fill
+                  sizes="(max-width: 1024px) 100vw, 760px"
+                  className="object-cover object-right"
+                />
+                <div className="pointer-events-none absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-white/30 to-transparent dark:from-slate-950/15" />
+              </div>
+            </article>
           </div>
         </div>
       </section>
