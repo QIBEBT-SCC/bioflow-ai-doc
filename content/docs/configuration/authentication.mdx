@@ -1,0 +1,48 @@
+---
+title: Authentication and Roles
+description: Browser sessions, CSRF protection, account administration, and resource permissions
+---
+
+BioFlow AI uses server-side Redis sessions. The browser receives an HttpOnly `session_id` cookie and a readable `csrf_token` cookie; it does not store JWT access or refresh tokens. Redis stores only a SHA-256 digest of the random session ID.
+
+## Session lifecycle
+
+- A valid request extends the idle timeout, but never beyond the absolute expiry.
+- The defaults are 24 hours idle and 7 days absolute lifetime.
+- Signing in replaces the session already held by that browser. Signing out removes the current session.
+- **Sign out other devices** revokes all sessions for the account except the current browser.
+- Changing a password revokes other sessions and rotates the current session.
+- A Redis restart or lost session record signs the user out safely.
+
+Every `POST`, `PUT`, `PATCH`, and `DELETE` request must carry `X-CSRF-Token`. The API checks that it matches both the `csrf_token` cookie and the value bound to the Redis session, and also validates the request `Origin` against `network.cors_origins`.
+
+<Callout type="warn">
+  Production must use HTTPS and `cookie_secure = true`. Use `cookie_secure = false` only for local HTTP development. `SameSite=None` is rejected unless secure cookies are enabled.
+</Callout>
+
+## Accounts and passwords
+
+Public registration is disabled. Administrators create accounts, activate or deactivate them, change roles, and reset passwords in **Settings → User Management**. Any administrator role, status, or password change revokes every session belonging to the affected account. The last active administrator cannot be deactivated or downgraded.
+
+Users can change their own password and revoke other devices from the account menu. Passwords must be non-empty and no longer than 128 UTF-8 bytes. The strength indicator is advice only and does not block weak passwords. New passwords use Argon2id; an existing bcrypt hash is upgraded automatically after a successful login.
+
+Failed login responses do not reveal whether an email exists. By default, a normalized email is limited to 10 failed attempts in 15 minutes, and a successful login clears its counter.
+
+## Permission model
+
+All business data requires a valid, active session; “public” means visible to signed-in users, not anonymous access.
+
+| Capability | Visitor | Member | Admin |
+| --- | --- | --- | --- |
+| Read public project metadata, sample summaries, public workflows, and tool catalogues | Yes | Yes | Yes |
+| Read private resources | No | Own resources | All resources |
+| Create projects, workflows, agents, and runs | No | Yes | Yes |
+| Modify or delete resources | No | Own resources | All resources |
+| Access runs, tasks, logs, monitoring, and output files | No | Own resources | All resources |
+| Manage tools, images, models, and users | No | No | Yes |
+
+Requests for a specific resource outside the user's visibility return `404`; attempts to use a generally unavailable role capability return `403`. Runs, tasks, logs, monitoring data, and output files remain private even when their project is public.
+
+## Deployment changes
+
+The session-based backend and Web UI must be deployed together. The retired `/auth/token` and `/auth/refresh` endpoints are not supported. Existing user and role records are preserved, but every user must sign in again after the upgrade. Old JWT configuration fields are ignored and old Redis token keys can expire naturally.

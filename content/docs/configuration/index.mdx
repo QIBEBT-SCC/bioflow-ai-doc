@@ -34,9 +34,10 @@ TOML field names are lowercase. Unknown fields are ignored, so remove retired se
 ```toml
 [security]
 secret_key = "generated-random-value"
-algorithm = "HS256"
-access_token_expire_minutes = 30
-refresh_token_expire_days = 7
+session_idle_timeout_hours = 24
+session_absolute_timeout_days = 7
+login_max_failures = 10
+login_failure_window_minutes = 15
 user_cache_ttl_seconds = 300
 cookie_secure = false
 cookie_samesite = "lax"
@@ -44,15 +45,17 @@ cookie_samesite = "lax"
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `secret_key` | Randomly generated | Key used for JWTs and protected data; do not rotate it casually after deployment. |
-| `access_token_expire_minutes` | `30` | Access token lifetime. |
-| `refresh_token_expire_days` | `7` | Refresh token lifetime. |
+| `secret_key` | Randomly generated | Key used to protect stored application secrets; do not rotate it casually after deployment. |
+| `session_idle_timeout_hours` | `24` | Redis session idle timeout, extended by valid requests. |
+| `session_absolute_timeout_days` | `7` | Maximum session lifetime, regardless of activity. |
+| `login_max_failures` | `10` | Failed logins allowed per normalized email in one window. |
+| `login_failure_window_minutes` | `15` | Failed-login rate-limit window. |
 | `user_cache_ttl_seconds` | `300` | User permission cache lifetime in seconds. |
 | `cookie_secure` | `false` | Set to `true` for HTTPS deployments. |
 | `cookie_domain` | Unset | Optional cookie domain. |
 | `cookie_samesite` | `lax` | One of `lax`, `strict`, or `none`. |
 
-`auto-init` generates and persists a random `secret_key`; no manual value is required. Never commit production configuration or secrets to version control.
+`auto-init` generates and persists a random `secret_key`; no manual value is required. Retired JWT fields are ignored. Production deployments must use HTTPS with `cookie_secure = true`; `SameSite=None` also requires secure cookies. Never commit production configuration or secrets to version control. See [Authentication and Roles](/docs/configuration/authentication).
 
 ## Network `[network]`
 

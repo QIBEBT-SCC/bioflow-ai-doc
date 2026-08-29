@@ -73,7 +73,7 @@ uv run bioflow-ai init system-init
 
 完整的一次性初始化。按顺序执行以下步骤：
 
-1. 创建默认管理员账户（若已存在任何用户则跳过）
+1. 交互式创建首个管理员账户（若已存在任何用户则跳过）
 2. 从 `presets/images.parquet` 导入容器镜像记录
 3. 从 `presets/tool_docs.parquet` 导入工具文档
 4. 从 `presets/tools.parquet` 导入工具节点定义
@@ -91,11 +91,7 @@ uv run bioflow-ai init system-init
 uv run bioflow-ai init create-admin
 ```
 
-仅在用户表为空时创建默认管理员账户（`admin@email.com` / `admin`）。可安全地在现有安装中调用；如果用户已存在，该命令会直接退出且不会做任何更改。
-
-<Callout type="warn">
-  首次登录后请立即修改默认密码。
-</Callout>
+用户表为空时，交互式输入首个管理员的邮箱、用户名和最终密码。如果用户已存在，该命令会直接退出且不做更改。系统不会创建默认凭据。
 
 ---
 

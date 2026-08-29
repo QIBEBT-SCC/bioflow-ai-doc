@@ -34,9 +34,10 @@ PERSISTENT__DATABASE__DB_URL='postgresql+psycopg://user:pass@host:5432/db'
 ```toml
 [security]
 secret_key = "generated-random-value"
-algorithm = "HS256"
-access_token_expire_minutes = 30
-refresh_token_expire_days = 7
+session_idle_timeout_hours = 24
+session_absolute_timeout_days = 7
+login_max_failures = 10
+login_failure_window_minutes = 15
 user_cache_ttl_seconds = 300
 cookie_secure = false
 cookie_samesite = "lax"
@@ -44,15 +45,17 @@ cookie_samesite = "lax"
 
 | Key | 默认值 | 说明 |
 | --- | --- | --- |
-| `secret_key` | 自动随机生成 | JWT 与安全数据使用的密钥；部署后不要随意更换。 |
-| `access_token_expire_minutes` | `30` | Access token 有效期。 |
-| `refresh_token_expire_days` | `7` | Refresh token 有效期。 |
+| `secret_key` | 自动随机生成 | 用于保护应用内存储的敏感数据；部署后不要随意更换。 |
+| `session_idle_timeout_hours` | `24` | Redis 会话空闲超时；有效请求会滑动续期。 |
+| `session_absolute_timeout_days` | `7` | 无论是否活跃，会话的最长有效期。 |
+| `login_max_failures` | `10` | 每个规范化邮箱在一个窗口内允许的登录失败次数。 |
+| `login_failure_window_minutes` | `15` | 登录失败限流窗口。 |
 | `user_cache_ttl_seconds` | `300` | 用户权限缓存时间，单位为秒。 |
 | `cookie_secure` | `false` | HTTPS 部署应改为 `true`。 |
 | `cookie_domain` | 未设置 | 可选的 Cookie 域名。 |
 | `cookie_samesite` | `lax` | 可选 `lax`、`strict` 或 `none`。 |
 
-`auto-init` 会生成并持久化随机 `secret_key`，无需手动填写。请勿把生产配置和密钥提交到版本库。
+`auto-init` 会生成并持久化随机 `secret_key`，无需手动填写。旧 JWT 字段会被忽略。生产环境必须使用 HTTPS 并设置 `cookie_secure = true`；`SameSite=None` 也要求安全 Cookie。请勿把生产配置和密钥提交到版本库。参见[登录、会话与角色](/docs/configuration/authentication)。
 
 ## 网络 `[network]`
 

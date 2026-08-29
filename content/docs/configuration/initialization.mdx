@@ -22,7 +22,7 @@ This is the recommended entry point for a new deployment. It combines configurat
 | Configuration | Creates `config.toml` in the project root | An existing file can be kept |
 | Test data | Syncs sample data from Hugging Face to `test_data_path` | Yes |
 | Project containers | Generates `docker-compose.yml`, starts dependencies, and waits for health checks | Yes |
-| Preset data | Creates tables, the admin account, tool data, and Milvus indexes | Yes |
+| Preset data | Creates tables, prompts for the first admin account, imports tool data, and builds Milvus indexes | Yes |
 | AI providers | Configures providers, models, and system model roles | Not run when a prerequisite fails |
 
 Skipping an optional stage does not stop the wizard. If an attempted stage fails, the final screen reports that initialisation is incomplete.
@@ -77,11 +77,11 @@ Test data is downloaded with `uvx hf sync` to `[persistent.storage].test_data_pa
 The preset-data stage:
 
 1. Creates database tables.
-2. Creates `admin@email.com` with the initial password `admin` when the user table is empty.
+2. When the user table is empty, prompts for the first administrator email, username, and final password.
 3. Imports images, tool documentation, and tool definitions.
 4. Rebuilds the Milvus indexes for tools, images, and auxiliary nodes.
 
-Missing preset files are downloaded from the `Aye10032/bioflow-ai-prebuild` Hugging Face bucket. Change the administrator password immediately after the first login.
+Missing preset files are downloaded from the `Aye10032/bioflow-ai-prebuild` Hugging Face bucket. No fixed administrator credentials are created or printed.
 
 ## AI providers and models
 

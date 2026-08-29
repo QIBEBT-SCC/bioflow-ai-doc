@@ -73,7 +73,7 @@ uv run bioflow-ai init system-init
 
 Full one-time initialisation. Runs the following steps in order:
 
-1. Creates the default admin account (skipped if any user already exists)
+1. Prompts for the first administrator account (skipped if any user already exists)
 2. Imports container image records from `presets/images.parquet`
 3. Imports tool documentation from `presets/tool_docs.parquet`
 4. Imports tool node definitions from `presets/tools.parquet`
@@ -91,11 +91,7 @@ Run this **once** after a fresh installation. See [`init-db`](#init-db) and [`re
 uv run bioflow-ai init create-admin
 ```
 
-Creates the default admin account (`admin@email.com` / `admin`) only if the user table is empty. Safe to call on an existing installation — it exits without making any changes if users already exist.
-
-<Callout type="warn">
-  Change the default password immediately after first login.
-</Callout>
+If the user table is empty, interactively prompts for the first administrator email, username, and final password. It exits without changing anything when users already exist. No default credentials are created.
 
 ---
 
