@@ -44,7 +44,7 @@ uv run bioflow-ai auto-init
 
 ## 第三步 — 启动后端进程
 
-初始化向导不会常驻运行 FastAPI 和 Celery Worker。请在两个终端中分别启动：
+初始化向导不会常驻运行 FastAPI 和 Worker。请在三个终端中分别启动：
 
 ```bash
 # 终端 1 — API 服务
@@ -54,6 +54,11 @@ uv run bioflow-ai api
 ```bash
 # 终端 2 — Celery Worker
 uv run bioflow-ai worker
+```
+
+```bash
+# 终端 3 — 智能体 Worker
+uv run bioflow-ai agent-worker
 ```
 
 默认地址如下：

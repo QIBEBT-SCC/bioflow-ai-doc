@@ -23,15 +23,15 @@ uv run bioflow-ai init rebuild-index --help
 
 ---
 
-## `auto-init` — Interactive system initialisation
+## `auto-init` — Interactive system initialization
 
 ```bash
 uv run bioflow-ai auto-init
 ```
 
-The recommended entry point for a new deployment. The wizard can generate or keep `config.toml`, synchronise test data, generate and start Compose services, initialise database records and vector indexes, and configure AI providers, models, and system roles.
+The recommended entry point for a new deployment. The wizard can generate or keep `config.toml`, synchronize test data, generate and start Compose services, initialize database records and vector indexes, and configure AI providers, models, and system roles.
 
-It waits for PostgreSQL, RustFS, and Milvus, but it does not start the long-running API server or Celery worker. See [Automatic Initialisation](/docs/configuration/initialization) for all stages, port handling, and rerun behaviour.
+It waits for PostgreSQL, RustFS, and Milvus, but it does not start the long-running API server, workflow worker, or agent worker. See [Automatic Initialization](/docs/configuration/initialization) for every prompt, accepted value, port handling, and rerun behavior.
 
 ---
 
@@ -59,7 +59,23 @@ The API server and the worker must both be running for workflow execution to wor
 
 ---
 
-## `init` — Initialisation and database management
+## `agent-worker` — Start the agent worker
+
+```bash
+uv run bioflow-ai agent-worker [OPTIONS]
+```
+
+Starts the isolated Celery worker for Web agent runs. It uses a dedicated queue so agent runs do not occupy the regular workflow worker.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `--concurrency` | `1` | Number of agent runs that can execute concurrently |
+
+Keep the API server, workflow worker, and agent worker running for the complete platform experience.
+
+---
+
+## `init` — Initialization and database management
 
 ```bash
 uv run bioflow-ai init <subcommand>
@@ -71,7 +87,7 @@ uv run bioflow-ai init <subcommand>
 uv run bioflow-ai init system-init
 ```
 
-Full one-time initialisation. Runs the following steps in order:
+Full one-time initialization. Runs the following steps in order:
 
 1. Prompts for the first administrator account (skipped if any user already exists)
 2. Imports container image records from `presets/images.parquet`

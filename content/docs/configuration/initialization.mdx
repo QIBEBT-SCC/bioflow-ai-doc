@@ -1,6 +1,6 @@
 ---
-title: Automatic Initialisation
-description: Generate configuration, start dependencies, and configure models with the interactive wizard
+title: Automatic Initialization
+description: Configure and initialize BioFlow AI with the interactive wizard
 ---
 
 Run the wizard from the project root:
@@ -9,49 +9,119 @@ Run the wizard from the project root:
 uv run bioflow-ai auto-init
 ```
 
-This is the recommended entry point for a new deployment. It combines configuration generation, port synchronisation, container startup, preset database import, and AI model setup in one interactive flow.
+This is the recommended entry point for a new deployment. It generates `config.toml`, checks ports, starts project containers, initializes preset data, and configures AI models.
 
 <Callout type="info">
-  The wizard does not start FastAPI or the Celery worker. After initialisation, run `uv run bioflow-ai api` and `uv run bioflow-ai worker` separately.
+  The wizard does not keep the API or workers running. After initialization, start `uv run bioflow-ai api`, `uv run bioflow-ai worker`, and `uv run bioflow-ai agent-worker` in separate terminals.
 </Callout>
 
 ## Workflow
 
-| Stage | Behaviour | Can be skipped |
+| Stage | What it does | Can be skipped |
 | --- | --- | --- |
 | Configuration | Creates `config.toml` in the project root | An existing file can be kept |
-| Test data | Syncs sample data from Hugging Face to `test_data_path` | Yes |
-| Project containers | Generates `docker-compose.yml`, starts dependencies, and waits for health checks | Yes |
-| Preset data | Creates tables, prompts for the first admin account, imports tool data, and builds Milvus indexes | Yes |
-| AI providers | Configures providers, models, and system model roles | Not run when a prerequisite fails |
+| Port Preflight | Finds available ports and updates configuration and Compose | No, when creating configuration |
+| Test Data | Synchronizes the example dataset from Hugging Face | Yes |
+| Project Containers | Generates `docker-compose.yml`, starts services, and waits for health checks | Yes |
+| System Preset Data | Creates tables and imports the built-in catalog and vector indexes | Yes |
+| AI Providers and Models | Configures providers, models, and system model roles | Not run after a failed prerequisite |
 
-Skipping an optional stage does not stop the wizard. If an attempted stage fails, the final screen reports that initialisation is incomplete.
+Skipping an optional stage does not stop the wizard. If an attempted stage fails, the final screen reports that initialization is incomplete.
 
-## Generating `config.toml`
+## Configuration prompts
 
-On first run, the wizard asks for:
+The labels below match the English TUI exactly. Press Enter to accept a displayed default.
 
-1. Network proxy settings
-2. Data, genome, bioinformatics database, and test-data paths
-3. Default thread and memory limits
-4. Docker or Podman, plus optional docker.io credentials
-5. Milvus and embedding API settings
-6. The PDF parser
+### Existing `config.toml`
 
-Settings that are not prompted use the current code defaults, including an automatically generated random `security.secret_key`.
+If the file already exists, the wizard asks `config.toml already exists. Overwrite it?`.
 
-When `config.toml` already exists, choose one of the following:
-
-- **Keep it**: leave the file unchanged and continue with data, containers, database, and models.
-- **Overwrite it**: answer the configuration prompts again and write a new file.
+| Answer | Result |
+| --- | --- |
+| `No` (default) | Keeps the file unchanged, skips all configuration prompts and Port Preflight, then continues initialization |
+| `Yes` | Collects configuration again and replaces the file |
 
 <Callout type="warn">
-  Overwriting writes a complete new configuration. Back up custom passwords, external service URLs, and security settings first.
+  Overwriting creates a complete new configuration. Back up custom passwords, external service URLs, and security settings first.
 </Callout>
 
-## Port preflight and Compose
+### Network Configuration
 
-The wizard checks the following host ports. If one is occupied, it finds the next available port and updates both `config.toml` and the generated `docker-compose.yml`.
+| TUI prompt | Accepted value and default | What it sets |
+| --- | --- | --- |
+| `Use a network proxy?` | `Yes` or `No`; default `No` | Enables the system proxy used for outbound requests and downloads |
+| `Proxy type` | `http` or `socks5`; default `http` | Proxy protocol |
+| `Proxy host` | Hostname or IP without a URL scheme; default `localhost` | Proxy server host |
+| `Proxy port` | Positive integer; default `7890` | Proxy server port |
+
+The last three prompts only appear when `Use a network proxy?` is answered with `Yes`.
+
+### Storage Paths
+
+Paths may be relative to the project root or absolute.
+
+| TUI prompt | Default | What it stores |
+| --- | --- | --- |
+| `Runtime data path (storage_path)` | `./storage` | General runtime and analysis data |
+| `Biological database path (bio_db_path)` | `./storage/bio_dbs` | Downloaded biological databases |
+| `Reference genome path (genome_path)` | `./storage/genome` | Reference genomes |
+| `Test data path (test_data_path)` | `./testdata` | Example data downloaded by the next stage |
+
+Use directories on storage with enough capacity for your datasets and workflow outputs.
+
+### Resource Limits
+
+| TUI prompt | Accepted value and default | What it sets |
+| --- | --- | --- |
+| `Maximum threads (max_thread)` | Positive integer; default `8` | Default CPU thread limit for analysis tasks |
+| `Maximum memory (max_mem, e.g. 4G)` | Memory string such as `4G`, `16G`, or `512M`; default `4G` | Default memory limit for analysis tasks |
+
+These values are task defaults, not a reservation made during initialization.
+
+### Container Runtime
+
+| TUI prompt | Accepted value and default | What it sets |
+| --- | --- | --- |
+| `Container runtime` | `docker` or `podman`; default `docker` | Runtime used for project services and analysis tools |
+| `docker.io username (optional)` | Username or blank | Registry username used when pulling images |
+| `docker.io password (optional)` | Password or access token, or blank | Registry credential stored in `config.toml` |
+
+Use the runtime whose Compose integration is already installed. Podman installations must install the Python extra with `uv sync --extra podman`.
+
+### Knowledge Base Embedding
+
+| TUI prompt | Accepted value and default | What it sets |
+| --- | --- | --- |
+| `Embedding model name` | Provider model ID; default `Qwen/Qwen3-Embedding-4B` | Embedding model used to build and search knowledge-base vectors |
+| `Embedding API base URL` | OpenAI-compatible API root; default `https://api.siliconflow.cn/v1/` | Endpoint serving the embedding model |
+| `Embedding API key` | API key required by that endpoint | Credential used for embedding requests |
+
+The model ID must exist at the selected endpoint. This setting is independent of the chat and agent models configured later.
+
+### PDF Parser
+
+| TUI prompt | Accepted value and default | What it sets |
+| --- | --- | --- |
+| `PDF parser engine` | `local`, `open_mineru`, `mineru`, `doc2x`, or `grobid`; default `local` | Parser selected for documents added to the knowledge base |
+| `Batch size (batch_size)` | Positive integer; default `5` | PDF parsing batch size |
+
+Additional prompts depend on the selected engine:
+
+| Engine | TUI prompt | Accepted value and default |
+| --- | --- | --- |
+| `open_mineru` | `Open MinerU API URL` | Service root; default `http://localhost:8000` |
+| `open_mineru` | `Request timeout (seconds)` | Positive integer; default `600` |
+| `mineru` | `MinerU API URL` | Service root; default `https://api.mineru.app` |
+| `mineru` | `MinerU API Key` | MinerU credential |
+| `mineru` | `Request timeout (seconds)` | Positive integer; default `600` |
+
+<Callout type="warn">
+  The configuration schema accepts every listed engine name, but the current runtime dispatcher only implements `open_mineru`. See <DynamicLink href="/[lang]/docs/configuration/pdf-parser">PDF Parser</DynamicLink> before enabling document parsing.
+</Callout>
+
+## Port Preflight and Compose
+
+After collecting configuration, the wizard checks these host ports. If a port is occupied, it finds the next available port and updates both `config.toml` and the generated `docker-compose.yml`.
 
 | Service | Default port |
 | --- | --- |
@@ -63,48 +133,77 @@ The wizard checks the following host ports. If one is occupied, it finds the nex
 | Milvus | `19530` |
 | Web UI | `3000` |
 
-The Compose file is generated from the template for the selected runtime:
+The Compose file is generated from `deploy/docker/docker-compose.yml` or `deploy/podman/docker-compose.yml`, according to `Container runtime`.
 
-- Docker: `deploy/docker/docker-compose.yml`
-- Podman: `deploy/podman/docker-compose.yml`
+## Test Data
 
-The wizard also synchronises the Web UI `BACKEND_API_URL`, creates the RustFS and Milvus data directories, runs Compose, and waits for PostgreSQL, RustFS, and Milvus before starting database initialisation.
+The wizard displays `Test data path` and `Download proxy`, then asks one of the following:
 
-## Test data and preset data
+- `Download the test dataset?` when the target directory is empty; default `Yes`.
+- `The test data directory is not empty. Synchronize or update it?` when files already exist; default `No`.
 
-Test data is downloaded with `uvx hf sync` to `[persistent.storage].test_data_path`. If the directory already contains files, the wizard asks before synchronising it again.
+Answering `Yes` runs `uvx hf sync` for `hf://buckets/Aye10032/bioflow-ai-testdata`. The test dataset is optional and is intended for trying the platform after deployment.
 
-The preset-data stage:
+## Project Containers
 
-1. Creates database tables.
-2. When the user table is empty, prompts for the first administrator email, username, and final password.
-3. Imports images, tool documentation, and tool definitions.
-4. Rebuilds the Milvus indexes for tools, images, and auxiliary nodes.
+The prompt is `Start project containers with docker?` or `Start project containers with podman?`, with `Yes` as the default.
 
-Missing preset files are downloaded from the `Aye10032/bioflow-ai-prebuild` Hugging Face bucket. No fixed administrator credentials are created or printed.
+When accepted, the wizard:
 
-## AI providers and models
+1. Checks the selected runtime and its native Compose command.
+2. Generates the root `docker-compose.yml` and synchronizes the Web UI backend port.
+3. Prepares RustFS and Milvus volume ownership.
+4. Starts PostgreSQL, Redis, RabbitMQ, RustFS, Milvus, etcd, and the Web UI.
+5. Waits until required services are running and PostgreSQL, RustFS, and Milvus pass health checks.
 
-One or more providers can be selected in a single run:
+## System Preset Data
 
-| Provider | Built-in model choices |
-| --- | --- |
-| DeepSeek | `deepseek-v4-flash`, `deepseek-v4-pro` |
-| OpenAI | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` |
-| Custom | Enter an OpenAI-compatible base URL and model API names |
+The prompt `Initialize system preset data and vector indexes?` defaults to `Yes`.
 
-Each model has an optional display name; pressing Enter keeps it identical to the model API name. A Custom provider can contain multiple models, and its API key may be blank for unauthenticated local services.
+When accepted, the wizard creates database tables and imports images, tool documentation, tool definitions, and related Milvus indexes. Missing preset files are downloaded from the `Aye10032/bioflow-ai-prebuild` Hugging Face bucket.
 
-After saving the models, the wizard displays the current assignments for long-context, agent, coding, simple-task, high-performance, chat, and vision roles. Edit any role, then select **Done**.
+If the user table is empty, it also asks:
 
-Known model prices are filled automatically. An unrecognised model is temporarily priced at `0`, and the wizard tells you to complete its pricing later in the Web UI model settings.
+| TUI prompt | Accepted value and default | What it sets |
+| --- | --- | --- |
+| `Administrator email` | Non-empty email address | Login email for the first administrator |
+| `Administrator username` | Non-empty name; default `admin` | Display name for the first administrator |
+| `Administrator password (any strength, required, maximum 128 UTF-8 bytes)` | Non-empty password up to 128 UTF-8 bytes | Login password for the first administrator |
+
+No fixed administrator credentials are created or printed. If an account already exists, these prompts are skipped.
+
+## AI Providers and Models
+
+`Select AI providers to enable (Space to select, Enter to confirm)` requires at least one choice:
+
+| Choice | Built-in model choices | What to enter |
+| --- | --- | --- |
+| `DeepSeek` | `deepseek-v4-flash`, `deepseek-v4-pro` | A DeepSeek API key, proxy preference, enabled models, and display names |
+| `OpenAI` | `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | An OpenAI API key, proxy preference, enabled models, and display names |
+| `Custom (OpenAI-compatible)` | User-defined | Provider name, complete base URL, optional API key, proxy preference, and one or more model API names |
+
+For official providers, the TUI asks `Use the system proxy for <Provider>?`, then `Select <Provider> models to enable (Space to select, Enter to confirm)`. Each selected model gets a `<model> display name`; press Enter to keep the API name.
+
+For a Custom provider, `Provider base URL` must include `http://` or `https://`. `Model API name (model name)` must match the ID accepted by that service. Use `Add another model to this provider?` to enter more than one.
+
+The role screen assigns one configured model to each system role. Choose `Select a role to change`, select a model, and repeat as needed. Select `Done` to save.
+
+- `Long-context model`
+- `Agent model`
+- `Coding model`
+- `Simple-task model`
+- `High-performance model`
+- `Chat model`
+- `Vision model`
+
+Known model prices are filled automatically. Unrecognized models are temporarily priced at `0`; add their pricing later in the Web UI model settings.
 
 ## Running the wizard again
 
-`auto-init` can be run again to synchronise test data, start missing containers, or update model settings. Keep in mind:
+`auto-init` can be run again to synchronize test data, start missing containers, or update model settings. Keep in mind:
 
-- Keeping `config.toml` skips a new port preflight.
-- Running preset-data initialisation rebuilds the related preset records and vector indexes.
-- The provider wizard updates selected providers and deactivates providers not selected in that run.
+- Answering `No` to `config.toml already exists. Overwrite it?` skips Port Preflight.
+- Running System Preset Data again rebuilds related preset records and vector indexes.
+- The provider stage deactivates providers that are not selected in the current run.
 
 For database or vector-index maintenance only, use the [`bioflow-ai init` commands](/docs/cli#init--initialisation-and-database-management) instead of rerunning the full wizard.

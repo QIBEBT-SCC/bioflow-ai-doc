@@ -1,6 +1,6 @@
 ---
 title: Using Podman
-description: Configure Podman with the automatic initialisation wizard
+description: Configure Podman with the automatic initialization wizard
 ---
 
 BioFlowAI can use Podman for project dependencies and the Podman API for bioinformatics tool containers. The repository includes a dedicated `deploy/podman/docker-compose.yml` template, so the Docker template does not need manual edits.
@@ -68,13 +68,13 @@ podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock
   Run the backend and the Podman socket as the same user. A backend managed by systemd must also retain the correct `XDG_RUNTIME_DIR`.
 </Callout>
 
-## Run initialisation
+## Run initialization
 
 ```bash
 uv run bioflow-ai auto-init
 ```
 
-Choose `podman` at the container-runtime prompt. The wizard then:
+Choose `podman` at `Container runtime`. The wizard then:
 
 1. Writes `container = "podman"` to `config.toml`.
 2. Generates the root `docker-compose.yml` from `deploy/podman/docker-compose.yml`.
@@ -119,8 +119,8 @@ Only one needs to be available.
 
 ### Web UI cannot reach the API
 
-Confirm that FastAPI was started manually and that `[network].host` is `0.0.0.0`. If the API port was changed manually after initialisation, synchronise the Web UI `BACKEND_API_URL` in `docker-compose.yml`.
+Confirm that FastAPI was started manually and that `[network].host` is `0.0.0.0`. If the API port was changed manually after initialization, synchronize the Web UI `BACKEND_API_URL` in `docker-compose.yml`.
 
 ## Switch back to Docker
 
-Run `auto-init` again and choose Docker, or change `[docker].container` to `docker`, rerun the wizard, and keep the existing configuration. The wizard regenerates Compose from the Docker template.
+Run `auto-init` again and choose `docker` at `Container runtime`, or change `[docker].container` to `docker`, rerun the wizard, and keep the existing configuration. The wizard regenerates Compose from the Docker template.

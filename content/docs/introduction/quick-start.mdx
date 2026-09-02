@@ -1,6 +1,6 @@
 ---
 title: Quick Start
-description: Deploy BioFlowAI with the automatic initialisation wizard
+description: Deploy BioFlowAI with the automatic initialization wizard
 icon: Rocket
 ---
 
@@ -21,7 +21,7 @@ cd bioflow-ai
 uv sync
 ```
 
-## Step 2 — Run automatic initialisation
+## Step 2 — Run automatic initialization
 
 ```bash
 uv run bioflow-ai auto-init
@@ -36,15 +36,15 @@ The wizard:
 5. Creates database tables, the default administrator, preset tool data, and Milvus vector indexes.
 6. Configures DeepSeek, OpenAI, or an OpenAI-compatible Custom provider and assigns system model roles.
 
-Some stages ask for confirmation before running. See <DynamicLink href="/[lang]/docs/configuration/initialization">Automatic Initialisation</DynamicLink> for the full workflow and rerun behaviour.
+Some stages ask for confirmation before running. See <DynamicLink href="/[lang]/docs/configuration/initialization">Automatic Initialization</DynamicLink> for every prompt, accepted value, and rerun behavior.
 
 <Callout type="warn">
-  Initialisation may download test data and missing preset files from Hugging Face. Configure a proxy in the wizard when running in a restricted network.
+  Initialization may download test data and missing preset files from Hugging Face. Configure a proxy in the wizard when running in a restricted network.
 </Callout>
 
 ## Step 3 — Start backend processes
 
-The wizard does not keep FastAPI or the Celery worker running. Start them in separate terminals:
+The wizard does not keep FastAPI or the workers running. Start them in separate terminals:
 
 ```bash
 # Terminal 1 — API server
@@ -54,6 +54,11 @@ uv run bioflow-ai api
 ```bash
 # Terminal 2 — Celery worker
 uv run bioflow-ai worker
+```
+
+```bash
+# Terminal 3 — Agent worker
+uv run bioflow-ai agent-worker
 ```
 
 The default addresses are:
@@ -67,14 +72,14 @@ If a default port was occupied, use the replacement port displayed by the wizard
 
 ## Step 4 — Sign in
 
-Open the Web UI and sign in with the administrator email and password entered during initialisation. There are no default credentials. Providers and models configured by the wizard can be maintained in the Web UI model settings, including prices that were not recognised automatically.
+Open the Web UI and sign in with the administrator email and password entered during initialization. There are no default credentials. Providers and models configured by the wizard can be maintained in the Web UI model settings, including prices that were not recognized automatically.
 
 ![Home page](/homepage.png)
 
 ## Next steps
 
 <Cards>
-  <Card title="Automatic Initialisation" href="/docs/configuration/initialization" description="Understand each wizard stage and rerun behaviour" />
+  <Card title="Automatic Initialization" href="/docs/configuration/initialization" description="Understand each wizard stage and rerun behavior" />
   <Card title="Configuration" href="/docs/configuration" description="Review the actual config.toml fields and defaults" />
   <Card title="CLI Reference" href="/docs/cli" description="Start services and maintain database and vector indexes" />
 </Cards>

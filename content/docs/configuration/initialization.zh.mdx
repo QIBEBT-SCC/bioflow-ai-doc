@@ -1,6 +1,6 @@
 ---
 title: 自动初始化
-description: 使用交互式向导生成配置、启动依赖并初始化模型
+description: 使用交互式向导配置并初始化 BioFlow AI
 ---
 
 在项目根目录运行：
@@ -9,49 +9,119 @@ description: 使用交互式向导生成配置、启动依赖并初始化模型
 uv run bioflow-ai auto-init
 ```
 
-该命令是新部署的推荐入口。它会把原本需要手动完成的配置生成、端口同步、容器启动、数据库预置和 AI 模型设置串成一个交互式流程。
+这是新部署推荐使用的入口。它会生成 `config.toml`、检查端口、启动项目容器、初始化预置数据，并配置 AI 模型。
 
 <Callout type="info">
-  向导不会启动 FastAPI 或 Celery Worker。完成初始化后仍需分别运行 `uv run bioflow-ai api` 和 `uv run bioflow-ai worker`。
+  向导不会常驻运行 API 或 Worker。初始化完成后，需要分别在独立终端中启动 `uv run bioflow-ai api`、`uv run bioflow-ai worker` 和 `uv run bioflow-ai agent-worker`。
 </Callout>
 
 ## 执行流程
 
-| 阶段 | 行为 | 是否可跳过 |
+| TUI 阶段 | 作用 | 是否可跳过 |
 | --- | --- | --- |
-| 配置文件 | 生成项目根目录的 `config.toml` | 已有文件时可选择保留 |
-| 测试数据 | 从 Hugging Face 同步示例数据到 `test_data_path` | 是 |
-| 项目容器 | 生成 `docker-compose.yml`，启动依赖并等待健康检查通过 | 是 |
-| 系统预置数据 | 创建表、交互式创建首个管理员、导入工具数据并构建 Milvus 索引 | 是 |
-| AI Provider | 配置 Provider、模型和系统模型角色 | 前置阶段失败时不执行 |
+| `Configuration` | 在项目根目录生成 `config.toml` | 已有文件时可选择保留 |
+| `Port Preflight` | 寻找可用端口，并同步更新配置与 Compose | 创建配置时不可跳过 |
+| `Test Data` | 从 Hugging Face 同步示例数据 | 是 |
+| `Project Containers` | 生成 `docker-compose.yml`、启动服务并等待健康检查 | 是 |
+| `System Preset Data` | 创建数据表，导入内置目录和向量索引 | 是 |
+| `AI Providers and Models` | 配置 Provider、模型和系统模型角色 | 前置步骤执行失败时不运行 |
 
-跳过可选阶段不会中断向导。若某一步实际执行失败，结束页会提示存在未完成的初始化步骤。
+跳过可选步骤不会中断向导。若某个实际执行的步骤失败，结束页会提示初始化尚未完整完成。
 
-## 生成 `config.toml`
+## 配置项说明
 
-首次运行时，向导会依次询问：
+自动初始化 TUI 使用英文。下文中的提示文字和选项保留英文，并与终端界面保持一致；其余内容使用中文说明。看到默认值时，可以直接按回车接受。
 
-1. 网络代理
-2. 数据、基因组、生物信息数据库和测试数据路径
-3. 默认线程数和内存上限
-4. Docker 或 Podman，以及可选的 docker.io 凭据
-5. Milvus 与嵌入模型 API
-6. PDF 解析器
+### 已有 `config.toml`
 
-未询问的配置使用当前代码中的默认值，包括自动生成的随机 `security.secret_key`。
+如果文件已经存在，向导会询问 `config.toml already exists. Overwrite it?`。
 
-如果 `config.toml` 已存在，可选择：
-
-- **保留**：不改写配置，继续执行测试数据、容器、数据库和模型初始化。
-- **覆盖**：重新填写配置并写入新文件。
+| 选项 | 结果 |
+| --- | --- |
+| `No`（默认） | 保留文件，不再询问配置项，也不执行 `Port Preflight`，然后继续其他初始化步骤 |
+| `Yes` | 重新收集全部配置并覆盖原文件 |
 
 <Callout type="warn">
-  覆盖会写入完整的新配置。请先备份已有文件中的自定义密码、外部服务地址和安全设置。
+  覆盖操作会生成一份完整的新配置。请先备份已有文件中的自定义密码、外部服务地址和安全设置。
 </Callout>
 
-## 端口预检查与 Compose
+### `Network Configuration`
 
-向导会检查下列宿主机端口。若端口已占用，会从默认值开始自动向后寻找可用端口，并同时更新 `config.toml` 与生成的 `docker-compose.yml`。
+| TUI 提示 | 可填写内容与默认值 | 设置内容 |
+| --- | --- | --- |
+| `Use a network proxy?` | `Yes` 或 `No`；默认 `No` | 是否启用系统代理，用于出站请求和下载 |
+| `Proxy type` | `http` 或 `socks5`；默认 `http` | 代理协议 |
+| `Proxy host` | 不带 URL scheme 的主机名或 IP；默认 `localhost` | 代理服务器地址 |
+| `Proxy port` | 正整数；默认 `7890` | 代理服务器端口 |
+
+后三项仅在 `Use a network proxy?` 选择 `Yes` 时出现。
+
+### `Storage Paths`
+
+可以填写相对于项目根目录的路径，也可以填写绝对路径。
+
+| TUI 提示 | 默认值 | 保存内容 |
+| --- | --- | --- |
+| `Runtime data path (storage_path)` | `./storage` | 通用运行数据和分析数据 |
+| `Biological database path (bio_db_path)` | `./storage/bio_dbs` | 下载的生物信息数据库 |
+| `Reference genome path (genome_path)` | `./storage/genome` | 参考基因组 |
+| `Test data path (test_data_path)` | `./testdata` | 下一阶段下载的示例数据 |
+
+这些目录应位于容量足够的存储设备上，以容纳输入数据和工作流输出。
+
+### `Resource Limits`
+
+| TUI 提示 | 可填写内容与默认值 | 设置内容 |
+| --- | --- | --- |
+| `Maximum threads (max_thread)` | 正整数；默认 `8` | 分析任务默认使用的 CPU 线程上限 |
+| `Maximum memory (max_mem, e.g. 4G)` | `4G`、`16G`、`512M` 等内存字符串；默认 `4G` | 分析任务默认内存上限 |
+
+这些值是任务默认限制，初始化时不会立即预留相应资源。
+
+### `Container Runtime`
+
+| TUI 提示 | 可填写内容与默认值 | 设置内容 |
+| --- | --- | --- |
+| `Container runtime` | `docker` 或 `podman`；默认 `docker` | 项目服务和分析工具使用的容器运行时 |
+| `docker.io username (optional)` | 用户名或留空 | 拉取镜像时使用的 registry 用户名 |
+| `docker.io password (optional)` | 密码、access token 或留空 | 保存到 `config.toml` 的 registry 凭据 |
+
+请选择已经正确安装 Compose 的运行时。使用 Podman 时，需要先执行 `uv sync --extra podman` 安装 Python 可选依赖。
+
+### `Knowledge Base Embedding`
+
+| TUI 提示 | 可填写内容与默认值 | 设置内容 |
+| --- | --- | --- |
+| `Embedding model name` | Provider 提供的模型 ID；默认 `Qwen/Qwen3-Embedding-4B` | 构建和检索知识库向量所使用的 embedding 模型 |
+| `Embedding API base URL` | OpenAI-compatible API 根地址；默认 `https://api.siliconflow.cn/v1/` | 提供 embedding 模型的服务地址 |
+| `Embedding API key` | 对应服务要求的 API key | embedding 请求使用的凭据 |
+
+模型 ID 必须存在于所填写的服务中。这里配置的是知识库 embedding 模型，与后面配置的对话和智能体模型相互独立。
+
+### `PDF Parser`
+
+| TUI 提示 | 可填写内容与默认值 | 设置内容 |
+| --- | --- | --- |
+| `PDF parser engine` | `local`、`open_mineru`、`mineru`、`doc2x` 或 `grobid`；默认 `local` | 向知识库添加文档时使用的解析器 |
+| `Batch size (batch_size)` | 正整数；默认 `5` | PDF 解析批量大小 |
+
+不同 engine 会继续显示不同的选项：
+
+| Engine | TUI 提示 | 可填写内容与默认值 |
+| --- | --- | --- |
+| `open_mineru` | `Open MinerU API URL` | 服务根地址；默认 `http://localhost:8000` |
+| `open_mineru` | `Request timeout (seconds)` | 正整数；默认 `600` |
+| `mineru` | `MinerU API URL` | 服务根地址；默认 `https://api.mineru.app` |
+| `mineru` | `MinerU API Key` | MinerU 凭据 |
+| `mineru` | `Request timeout (seconds)` | 正整数；默认 `600` |
+
+<Callout type="warn">
+  配置类型接受上面列出的所有 engine 名称，但当前运行时调度器只实现了 `open_mineru`。启用文档解析前，请先阅读 <DynamicLink href="/[lang]/docs/configuration/pdf-parser">PDF 解析器</DynamicLink>。
+</Callout>
+
+## `Port Preflight` 与 Compose
+
+收集配置后，向导会检查下列宿主机端口。若端口已占用，会向后寻找可用端口，并同时更新 `config.toml` 与生成的 `docker-compose.yml`。
 
 | 服务 | 默认端口 |
 | --- | --- |
@@ -63,48 +133,77 @@ uv run bioflow-ai auto-init
 | Milvus | `19530` |
 | Web UI | `3000` |
 
-Compose 文件来自所选运行时对应的模板：
+Compose 文件根据 `Container runtime` 从 `deploy/docker/docker-compose.yml` 或 `deploy/podman/docker-compose.yml` 生成。
 
-- Docker：`deploy/docker/docker-compose.yml`
-- Podman：`deploy/podman/docker-compose.yml`
+## `Test Data`
 
-向导还会同步 Web UI 的 `BACKEND_API_URL`，创建 RustFS 和 Milvus 数据目录，执行 Compose 启动命令，并等待 PostgreSQL、RustFS 和 Milvus 就绪后才进入数据库初始化。
+向导会显示 `Test data path` 和 `Download proxy`，然后根据目录状态询问：
 
-## 测试数据和系统预置数据
+- 目标目录为空时显示 `Download the test dataset?`，默认 `Yes`。
+- 目录中已有文件时显示 `The test data directory is not empty. Synchronize or update it?`，默认 `No`。
 
-测试数据通过 `uvx hf sync` 下载到 `[persistent.storage].test_data_path`。若目录已有内容，向导会先询问是否继续同步。
+选择 `Yes` 后，会通过 `uvx hf sync` 同步 `hf://buckets/Aye10032/bioflow-ai-testdata`。该数据集仅用于部署完成后试用平台，可以跳过。
 
-系统预置阶段会：
+## `Project Containers`
 
-1. 创建数据库表。
-2. 用户表为空时，交互式输入首个管理员的邮箱、用户名和最终密码。
-3. 导入镜像、工具文档和工具定义。
-4. 重建工具、镜像和辅助节点的 Milvus 向量索引。
+这里会显示 `Start project containers with docker?` 或 `Start project containers with podman?`，默认 `Yes`。
 
-缺失的预置文件会从 `Aye10032/bioflow-ai-prebuild` Hugging Face bucket 下载。系统不会再创建或打印固定管理员凭据。
+选择 `Yes` 后，向导会：
 
-## AI Provider 与模型
+1. 检查所选运行时及其原生 Compose 命令。
+2. 生成根目录的 `docker-compose.yml`，并同步 Web UI 后端端口。
+3. 准备 RustFS 和 Milvus volume 的所有者。
+4. 启动 PostgreSQL、Redis、RabbitMQ、RustFS、Milvus、etcd 和 Web UI。
+5. 等待所需服务运行，并确认 PostgreSQL、RustFS 和 Milvus 通过健康检查。
 
-向导支持一次选择一个或多个 Provider：
+## `System Preset Data`
 
-| Provider | 内置候选模型 |
-| --- | --- |
-| DeepSeek | `deepseek-v4-flash`、`deepseek-v4-pro` |
-| OpenAI | `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna` |
-| Custom | 自行填写 OpenAI-compatible base URL 和模型 API 名称 |
+`Initialize system preset data and vector indexes?` 默认选择 `Yes`。
 
-每个模型都可以设置显示名称；直接回车时显示名称与模型 API 名称相同。Custom Provider 可连续添加多个模型，API key 可以留空以兼容不鉴权的本地服务。
+选择 `Yes` 后，向导会创建数据库表，导入镜像、工具文档、工具定义及对应的 Milvus 索引。缺失的预置文件会从 `Aye10032/bioflow-ai-prebuild` Hugging Face bucket 下载。
 
-模型保存后，向导会显示当前系统角色分配。可以逐项修改长上下文、智能体、编码、简单任务、高性能、常规对话和视觉模型，然后选择“完成”。
+如果用户表为空，还会询问：
 
-已知模型会自动填充价格。无法识别价格的模型暂记为 `0`，向导会提示稍后到 Web UI 的模型设置页面补充。
+| TUI 提示 | 可填写内容与默认值 | 设置内容 |
+| --- | --- | --- |
+| `Administrator email` | 非空邮箱地址 | 首个管理员的登录邮箱 |
+| `Administrator username` | 非空名称；默认 `admin` | 首个管理员的显示名称 |
+| `Administrator password (any strength, required, maximum 128 UTF-8 bytes)` | 非空且不超过 128 UTF-8 字节的密码 | 首个管理员的登录密码 |
 
-## 重新运行
+系统不会创建或打印固定管理员凭据。如果数据库中已经存在账号，这些提示会自动跳过。
 
-`auto-init` 可以再次运行，用于同步测试数据、重新启动缺失的容器或更新模型配置。需要注意：
+## `AI Providers and Models`
 
-- 选择保留 `config.toml` 时，不会重新进行端口预检查。
-- 执行系统预置数据初始化会用预置内容重建相关数据和向量索引。
-- Provider 向导会更新所选 Provider，并停用本次未选择的 Provider。
+`Select AI providers to enable (Space to select, Enter to confirm)` 至少需要选择一项：
 
-只需要维护数据库或向量索引时，请使用 [`bioflow-ai init` 命令](/docs/cli#init--初始化与数据库管理)，无需重新运行完整向导。
+| 选项 | 内置模型选项 | 需要填写的内容 |
+| --- | --- | --- |
+| `DeepSeek` | `deepseek-v4-flash`、`deepseek-v4-pro` | DeepSeek API key、代理设置、启用的模型和显示名称 |
+| `OpenAI` | `gpt-5.6-sol`、`gpt-5.6-terra`、`gpt-5.6-luna` | OpenAI API key、代理设置、启用的模型和显示名称 |
+| `Custom (OpenAI-compatible)` | 用户自定义 | Provider 名称、完整 base URL、可选 API key、代理设置和一个或多个模型 API 名称 |
+
+官方 Provider 会询问 `Use the system proxy for <Provider>?`，随后显示 `Select <Provider> models to enable (Space to select, Enter to confirm)`。每个选中的模型都需要填写 `<model> display name`，直接回车会沿用 API 名称。
+
+`Custom (OpenAI-compatible)` 的 `Provider base URL` 必须包含 `http://` 或 `https://`。`Model API name (model name)` 应填写该服务实际接受的模型 ID；通过 `Add another model to this provider?` 可以继续添加模型。
+
+模型角色页面会为每个系统角色分配一个已配置模型。通过 `Select a role to change` 选择角色并修改模型，完成后选择 `Done` 保存。
+
+- `Long-context model`
+- `Agent model`
+- `Coding model`
+- `Simple-task model`
+- `High-performance model`
+- `Chat model`
+- `Vision model`
+
+已知模型会自动填充价格。无法识别的模型会暂时将价格设为 `0`，需要稍后在 Web UI 的模型设置中补充。
+
+## 重新运行向导
+
+可以再次执行 `auto-init`，用于同步测试数据、启动缺失的容器或更新模型配置。需要注意：
+
+- 对 `config.toml already exists. Overwrite it?` 选择 `No` 时，不会重新执行 `Port Preflight`。
+- 再次运行 `System Preset Data` 会重建相关预置记录和向量索引。
+- Provider 阶段会停用本次运行中未选择的 Provider。
+
+如果只需要维护数据库或向量索引，请使用 [`bioflow-ai init` 命令](/docs/cli#init--初始化与数据库管理)，无需重新运行完整向导。

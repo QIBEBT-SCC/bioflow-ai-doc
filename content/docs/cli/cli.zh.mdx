@@ -31,7 +31,7 @@ uv run bioflow-ai auto-init
 
 新部署的推荐入口。该向导可以生成或保留 `config.toml`、同步测试数据、生成并启动 Compose 服务、初始化数据库与向量索引，以及配置 AI Provider、模型和系统角色。
 
-它会等待 PostgreSQL、RustFS 和 Milvus 就绪，但不会启动常驻的 API 服务或 Celery Worker。完整步骤、端口处理和重新运行行为见[自动初始化](/docs/configuration/initialization)。
+它会等待 PostgreSQL、RustFS 和 Milvus 就绪，但不会启动常驻的 API 服务、工作流 Worker 或智能体 Worker。每项 TUI 提示、可填写内容、端口处理和重新运行行为见[自动初始化](/docs/configuration/initialization)。
 
 ---
 
@@ -56,6 +56,22 @@ uv run bioflow-ai worker
 启动 Celery 工作节点，用于获取并执行工作流任务。工作节点会连接到 `config.toml` 中 `[celery]` 配置的 RabbitMQ（broker）和 Redis（backend）。
 
 API 服务器和工作节点必须同时运行，工作流执行才能正常工作。
+
+---
+
+## `agent-worker` — 启动智能体 Worker
+
+```bash
+uv run bioflow-ai agent-worker [OPTIONS]
+```
+
+启动专门执行 Web 智能体任务的独立 Celery Worker。它使用单独的队列，避免智能体运行占用普通工作流 Worker。
+
+| Option | 默认值 | 说明 |
+| --- | --- | --- |
+| `--concurrency` | `1` | 可以同时执行的智能体任务数量 |
+
+完整使用平台时，需要同时保持 API、工作流 Worker 和智能体 Worker 运行。
 
 ---
 

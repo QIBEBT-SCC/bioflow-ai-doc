@@ -74,7 +74,7 @@ podman system service --time=0 unix:///run/user/$(id -u)/podman/podman.sock
 uv run bioflow-ai auto-init
 ```
 
-在“容器运行时”中选择 `podman`。向导将：
+在 `Container runtime` 中选择 `podman`。向导将：
 
 1. 在 `config.toml` 中写入 `container = "podman"`。
 2. 从 `deploy/podman/docker-compose.yml` 生成根目录 `docker-compose.yml`。
@@ -123,4 +123,4 @@ podman-compose --version
 
 ## 切回 Docker
 
-重新运行 `auto-init` 并选择 Docker，或将 `[docker].container` 改为 `docker` 后重新运行向导并保留现有配置。向导会从 Docker 模板重新生成 Compose 文件。
+重新运行 `auto-init`，并在 `Container runtime` 中选择 `docker`；也可以将 `[docker].container` 改为 `docker` 后重新运行向导并保留现有配置。向导会从 Docker 模板重新生成 Compose 文件。
