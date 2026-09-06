@@ -1,4 +1,4 @@
 {
   "title": "Configuration",
-  "pages": ["index", "initialization", "authentication", "using-podman", "infrastructure", "clipboard", "pdf-parser", "knowledge-base"]
+  "pages": ["index", "initialization", "authentication", "coding-agents", "using-podman", "infrastructure", "clipboard", "pdf-parser", "knowledge-base"]
 }

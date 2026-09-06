@@ -1,0 +1,156 @@
+---
+title: 编码智能体
+description: 为 CODE 代码生成配置 Codex 和 OpenCode ACP 智能体
+---
+
+BioFlowAI 通过 Agent Client Protocol（ACP）连接外部编码智能体。管理员可以使用 **Codex** 或 **OpenCode** 创建和修改可复用的 Bash、Python 与 R CODE 定义，而不需要让智能体直接访问 CODE 数据库。
+
+智能体在临时工作目录中修改代码，并返回一份可审查的提案；它不会修改正在运行的工作流，也不会自动保存 CODE 定义。
+
+<Callout type="warn">
+  **接受**只会把提案应用到尚未保存的编辑器内容。仍需点击**保存**，CODE 定义才会被创建或更新。
+</Callout>
+
+## 使用前准备
+
+请先确认：
+
+- 当前账号是管理员；
+- API 服务和 `agent-worker` 已启动；
+- worker 所在主机配置的 Docker 或 Podman 可以访问 Docker Hub；
+- 至少一个编码智能体已经配置有效凭据。
+
+没有任何可用智能体时，CODE 编辑器不会显示 AI 编码入口。每个打开的编码侧栏都会持有一个临时 ACP 会话，并持续占用一个 `agent-worker` 并发槽，直到侧栏关闭或会话过期。
+
+## 配置智能体
+
+打开**设置 → 编码智能体**，然后选择对应页签。
+
+### Codex
+
+1. 点击**使用设备码连接**。
+2. 打开界面显示的 OpenAI 验证页面，输入设备码并完成登录。
+3. 返回 BioFlowAI，等待状态变为**已连接**。
+4. 配置 Codex 的默认运行选项：
+   - **文件访问**：建议使用 `workspace-write`，否则 Codex 无法修改临时 CODE 工作目录。
+   - **联网搜索**：可选择实时搜索、缓存搜索或禁用。
+   - **命令联网**：在 `workspace-write` 模式下，如需访问软件包或在线文档，可允许命令访问网络。
+5. 修改设置后，请关闭并重新打开已有的编码侧栏；新设置只作用于新会话。
+
+![Codex 连接状态、文件访问、联网搜索和命令联网设置](/coding-agents/codex-settings.zh.png)
+
+### OpenCode
+
+1. 从列表选择 OpenCode Go、OpenCode Zen、Anthropic、OpenAI、Google、OpenRouter 或 DeepSeek，再填写该供应商的 API Key。BioFlowAI 会使用对应的 OpenCode Provider ID，管理员不需要手工填写。
+2. 使用自建接口时选择 **Custom**，填写 Base URL、模型 ID 和 API Key。Custom 目前适用于兼容 OpenAI Chat Completions API 的服务。
+3. 保存后，卡片会显示**已连接**、当前供应商以及 Custom 的 Base URL 和模型 ID。需要替换 API Key 时点击**更新凭据**。
+
+![OpenCode 模型供应商与凭据设置](/coding-agents/opencode-settings.zh.png)
+
+再次保存其他供应商会新增或替换 `auth.json` 中对应的原生凭据条目，不会删除已有供应商。选择 Custom 时，BioFlowAI 还会把自定义供应商合并到 OpenCode 凭据目录中的 `opencode.json`，并在下次打开页面时恢复最近保存的供应商和非敏感配置。
+
+“已配置凭据”只表示凭据文件存在，并不会现场调用模型进行验证。密钥不会从设置接口返回浏览器。无效的凭据、供应商或网络配置会在启动编码会话或发送提示词时显示错误。
+
+### 凭据目录
+
+API 和 `agent-worker` 必须共享下面的独立目录，可在 `config.toml` 中配置：
+
+```toml
+[code_agent]
+auth_path = "./storage/codex-auth"
+opencode_auth_path = "./storage/opencode-auth"
+```
+
+不要将这些路径指向个人 CLI 配置目录，也不要让两个目录相互重叠。Codex 的可复用 `auth.json` 保存在独立 Codex 目录中。OpenCode 使用原生 `auth.json` 供应商映射，并在启动时将其复制到容器临时目录，避免把会话历史和缓存写入服务器凭据目录。
+
+Codex 的权限和联网搜索设置仅作用于 Codex。两个适配器都以非 root 用户运行在受资源限制的容器中，并使用临时 CODE 工作目录；ACP 权限请求只会在这个容器边界内放行。
+
+## 远端运行镜像
+
+无需在本地构建镜像。BioFlowAI 直接使用 Docker Hub 上带版本号的镜像：
+
+| 智能体 | 镜像 |
+| --- | --- |
+| Codex | `docker.io/aye1032/codex-acp:1.10.0-bioflow.2` |
+| OpenCode | `docker.io/aye1032/opencode-acp:1.18.29-bioflow` |
+
+会话启动时，BioFlowAI 会把所选镜像的完整地址交给当前配置的 Docker 或 Podman。本地没有缓存时，容器运行时会自动拉取。因此 worker 主机需要能够访问镜像仓库；BioFlowAI 的网络代理会传入智能体容器，但不会替容器运行时守护进程配置仓库代理。
+
+如需提前缓存镜像或排查镜像仓库连接，可以选择手动拉取。Docker：
+
+```sh
+docker pull docker.io/aye1032/codex-acp:1.10.0-bioflow.2
+docker pull docker.io/aye1032/opencode-acp:1.18.29-bioflow
+```
+
+原生 Podman：
+
+```sh
+podman pull docker.io/aye1032/codex-acp:1.10.0-bioflow.2
+podman pull docker.io/aye1032/opencode-acp:1.18.29-bioflow
+```
+
+镜像分别固定使用 `codex-acp` `1.10.0` 和 `opencode-ai` `1.18.29`；OpenCode 通过原生 `opencode acp` 命令启动。
+
+部署更新后，请重启后端和共用的智能体 worker。并发数为 4 时，这个 worker 进程最多同时承载 4 个长时间运行的 LangGraph 或 ACP 任务：
+
+```sh
+uv run bioflow-ai agent-worker --concurrency 4
+```
+
+## 在 CODE 编辑器中使用
+
+编码侧栏会显示在源码编辑器右侧。ACP 会话准备完成后，才能使用提示词输入框以及当前智能体提供的模型和思考强度选项。
+
+![CODE 源码编辑器与已经就绪的编码侧栏](/coding-agents/code-editor-sidebar.zh.png)
+
+1. 打开 **CODE**，新建一个 Bash、Python 或 R 定义，或者编辑已有定义。
+2. 在编辑器顶部的编码智能体选择器中选择可用的智能体。没有配置凭据的智能体会处于禁用状态。
+3. 打开编码侧栏，等待会话准备完成后再输入提示词。
+4. 如果当前 ACP 适配器提供模型或思考强度选项，可在输入框旁进行选择。BioFlowAI 会在当前浏览器中分别记住 Codex 和 OpenCode 已确认的选择；实际选项始终以当前适配器返回的内容为准。
+5. 描述要完成的修改并发送提示词。BioFlowAI 会把编辑器当前的源码和依赖列表作为这一轮的基线。
+6. 在侧栏中查看流式消息和执行活动。点击**停止**可取消正在执行的轮次，编辑器会保留执行前的内容。
+7. 提案生成后，在主编辑器中审查行内源码差异，以及新增或删除的依赖。
+8. 点击**拒绝**丢弃提案，或点击**接受**把提案中的源码和依赖复制到编辑器。
+9. 检查完整结果；新建 CODE 时还需填写名称和描述，最后点击**保存**。
+
+![行内代码差异以及提案接受和拒绝操作](/coding-agents/proposal-review.zh.png)
+
+切换智能体前需要先关闭编码侧栏。关闭侧栏会结束当前 ACP 会话，并清理对话和临时工作目录；尚未决定的提案不会被应用。此前已经接受的提案仍会作为未保存内容保留在表单中，但刷新页面或离开当前页面仍可能丢失这些修改。
+
+## 提案处理规则
+
+| 操作 | 编辑器结果 | 会话结果 | 数据库结果 |
+| --- | --- | --- | --- |
+| **接受** | 用提案替换表单中的源码和依赖 | 将接受后的内容作为下一轮基线 | 点击**保存**前不变 |
+| **拒绝** | 保留本轮执行前的源码和依赖 | 将临时工作目录恢复到本轮执行前 | 不变 |
+| **停止** | 保留当前执行轮次开始前的源码和依赖 | 取消提示词并恢复为可输入状态 | 不变 |
+| 关闭侧栏 | 保留已经接受到表单的修改；丢弃待处理提案 | 销毁临时工作目录和对话 | 不变 |
+
+Bash 智能体只能提交 `script.sh`；Python 和 R 还可以通过 `dependencies.txt` 提交直接依赖。不在此范围内的文件会被忽略，并作为警告显示在提案中。`output/` 只用于临时命令输出，其中的文件永远不会进入提案。
+
+同一时间只能有一个执行轮次或待处理提案控制编辑器。请先接受或拒绝当前提案，再切换模型、修改思考强度或发送下一条提示词。
+
+## 如何编写提示词
+
+建议明确说明预期输入、输出、约束条件和语言相关要求。例如：
+
+```text
+从第一个命令行参数读取 TSV 路径，检查必需列，并将过滤后的记录写入
+output/filtered.tsv。错误信息写入 stderr，只添加直接使用的 Python 依赖。
+```
+
+智能体能够看到当前 CODE 类型的编写规则，但并不知道它在工作流中的上下文。因此，应在提示词中说明预期的路径、参数和输出约定。
+
+## 常见问题
+
+| 现象 | 检查内容 |
+| --- | --- |
+| 看不到编码智能体入口 | 至少配置一个智能体，然后刷新 CODE 页面。 |
+| 侧栏一直显示“正在等待 coding-agent worker” | 确认 `agent-worker` 已启动、监听 `agent,acp` 队列，并能启动所选智能体的运行镜像。 |
+| 显示“已配置凭据”，但提示词执行失败 | 检查 API Key 或 Codex 登录、供应商 ID、模型配置、代理和 worker 的外网访问；凭据可用状态不是在线验证。 |
+| 提示会话数达到上限 | 关闭不再使用的编码侧栏，并检查 `max_sessions_per_user`、`max_sessions_system` 和 worker 并发数。 |
+| 缺少某个模型或思考强度 | 当前 ACP 适配器没有提供该选项；检查供应商配置后重新打开侧栏。 |
+| 编辑器无法修改 | 等待当前轮次结束、点击**停止**，或者接受/拒绝待处理提案。 |
+
+部署后应使用自己的实际凭据验证一次完整会话和提案。静态检查无法确认 worker 主机上的供应商认证、镜像可用性和外网连接。

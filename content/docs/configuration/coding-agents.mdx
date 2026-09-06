@@ -1,0 +1,157 @@
+---
+title: Coding Agents
+description: Configure Codex and OpenCode for CODE authoring over ACP
+---
+
+BioFlowAI connects external coding agents through the Agent Client Protocol (ACP). Administrators can use **Codex** or **OpenCode** to create and revise reusable Bash, Python, and R CODE definitions without giving the agent direct access to the CODE database.
+
+The agent works in a temporary workspace and returns a reviewable proposal. It does not modify a running workflow or save the CODE definition automatically.
+
+<Callout type="warn">
+  **Accept** only applies a proposal to the unsaved editor. You must still select **Save** to create or update the CODE definition.
+</Callout>
+
+## Before you begin
+
+Make sure that:
+
+- you are signed in as an administrator;
+- the API service and `agent-worker` are running;
+- the configured Docker or Podman runtime on the worker host can reach Docker Hub; and
+- at least one coding-agent provider has valid credentials configured.
+
+The AI coding control is hidden when no provider is configured. Each open coding sidebar owns one temporary ACP session and occupies one `agent-worker` concurrency slot until the sidebar closes or the session expires.
+
+## Configure a provider
+
+Open **Settings → Coding Agents**, then select the provider tab.
+
+### Codex
+
+1. Select **Connect with device code**.
+2. Open the displayed OpenAI verification page, enter the device code, and complete sign-in.
+3. Return to BioFlowAI and wait for the status to change to **Connected**.
+4. Configure the Codex runtime defaults:
+   - **File access:** `workspace-write` is recommended so Codex can edit the temporary CODE workspace.
+   - **Web search:** choose live, cached, or disabled search.
+   - **Command network:** allow commands to access the network in `workspace-write` mode when package or documentation access is required.
+5. Reopen an existing coding sidebar after changing these settings. New settings apply only to new sessions.
+
+![Codex connection, file access, search, and network settings](/coding-agents/codex-settings.en.png)
+
+### OpenCode
+
+1. Select OpenCode Go, OpenCode Zen, Anthropic, OpenAI, Google, OpenRouter, or DeepSeek, then enter that provider's API key. BioFlowAI uses the corresponding OpenCode provider ID, so administrators do not enter it manually.
+2. For a self-hosted endpoint, select **Custom** and enter its Base URL, model ID, and API key. Custom currently supports services compatible with the OpenAI Chat Completions API.
+3. After saving, the card shows **Connected**, the current provider, and the Base URL and model ID for Custom. Select **Update credentials** to replace the API key.
+
+![OpenCode model-provider and credential settings](/coding-agents/opencode-settings.en.png)
+
+Saving another provider adds or replaces its native credential entry in `auth.json` without removing existing providers. Selecting Custom also merges the custom provider into `opencode.json` in the OpenCode credential directory. The page restores the most recently saved provider and its non-secret custom settings when reopened.
+
+“Credentials configured” only confirms that a credential file exists; it does not make a test model request. Secrets are never returned to the browser. Invalid credentials, provider, or network settings are reported when a coding session starts or sends a prompt.
+
+### Credential storage
+
+The API and `agent-worker` must share these dedicated directories, configured in `config.toml`:
+
+```toml
+[code_agent]
+auth_path = "./storage/codex-auth"
+opencode_auth_path = "./storage/opencode-auth"
+```
+
+Do not point these paths at a personal CLI home or let the two directories overlap. Codex keeps its reusable `auth.json` in the dedicated Codex directory. OpenCode uses its native `auth.json` provider map and copies it into temporary container storage, so session history and caches are not persisted alongside the server credential file.
+
+Codex permission and web-search settings apply only to Codex. Both adapters run as non-root users in resource-limited containers with a temporary CODE workspace. ACP permission requests are allowed inside that container boundary.
+
+## Remote runner images
+
+No local image build is required. BioFlowAI uses these versioned images directly from Docker Hub:
+
+| Provider | Image |
+| --- | --- |
+| Codex | `docker.io/aye1032/codex-acp:1.10.0-bioflow.2` |
+| OpenCode | `docker.io/aye1032/opencode-acp:1.18.29-bioflow` |
+
+When a session starts, BioFlowAI passes the selected image reference to the configured Docker or Podman runtime. The runtime pulls it automatically when it is not available in the local cache. The worker host therefore needs outbound registry access; BioFlowAI's configured network proxy is passed to the container session but does not configure the container runtime daemon itself.
+
+You can optionally pre-pull the images to warm the cache or diagnose registry access before starting a real session. Docker:
+
+```sh
+docker pull docker.io/aye1032/codex-acp:1.10.0-bioflow.2
+docker pull docker.io/aye1032/opencode-acp:1.18.29-bioflow
+```
+
+Native Podman:
+
+```sh
+podman pull docker.io/aye1032/codex-acp:1.10.0-bioflow.2
+podman pull docker.io/aye1032/opencode-acp:1.18.29-bioflow
+```
+
+The images pin `codex-acp` to `1.10.0` and `opencode-ai` to `1.18.29`. OpenCode runs its native `opencode acp` command.
+
+Restart the backend and shared agent worker after deploying an update. A concurrency of four permits up to four long-running LangGraph and ACP jobs in that worker process:
+
+```sh
+uv run bioflow-ai agent-worker --concurrency 4
+```
+
+## Use a coding agent in the CODE editor
+
+The coding sidebar opens beside the source editor. Its provider, model, and reasoning controls are available only after the ACP session is ready.
+
+![CODE source editor with the coding sidebar ready for a prompt](/coding-agents/code-editor-sidebar.en.png)
+
+1. Open **CODE** and either create a Bash, Python, or R definition or edit an existing definition.
+2. Select an available provider from the coding-agent selector in the editor header. A provider without configured credentials remains disabled.
+3. Open the coding sidebar. Wait until the session is ready before entering a prompt.
+4. If the adapter provides model or reasoning controls, select them next to the prompt box. BioFlowAI remembers confirmed selections in this browser separately for Codex and OpenCode. Available choices always come from the current ACP adapter.
+5. Describe the change and send the prompt. BioFlowAI sends the current editor source and dependency list as that turn's baseline.
+6. Follow the streamed messages and activity. Select **Stop** to cancel an active turn; the editor returns to its pre-turn contents.
+7. When a proposal is ready, review the inline source diff and any added or removed dependencies in the main editor.
+8. Select **Reject** to discard the proposal, or **Accept** to copy the proposed source and dependencies into the editor.
+9. Review the complete result, fill in the name and description for a new CODE definition, and select **Save**.
+
+![Inline code diff and the proposal accept or reject controls](/coding-agents/proposal-review.en.png)
+
+Close the coding sidebar before switching providers. Closing it ends the current ACP session and discards its conversation and temporary workspace. A pending proposal is not applied. A proposal accepted earlier remains in the form as an unsaved edit, but navigating away or refreshing the page can still discard that edit.
+
+## Proposal behavior
+
+| Action | Editor result | Session result | Database result |
+| --- | --- | --- | --- |
+| **Accept** | Replaces the form's source and dependencies with the proposal | Uses the accepted content as the next turn's baseline | No change until **Save** |
+| **Reject** | Keeps the source and dependencies from before the turn | Restores the temporary workspace to the pre-turn baseline | No change |
+| **Stop** | Keeps the source and dependencies from before the active turn | Cancels the prompt and returns the session to ready | No change |
+| Close sidebar | Keeps edits already accepted into the form; drops a pending proposal | Destroys the temporary workspace and conversation | No change |
+
+For Bash, the agent can propose only `script.sh`. For Python and R, it can also propose direct dependencies through `dependencies.txt`. Files outside this contract are ignored and appear as proposal warnings. Files placed in `output/` are temporary command output and are never included in the proposal.
+
+Only one turn or pending proposal can control the editor at a time. Accept or reject the current proposal before changing the model, reasoning setting, or sending another prompt.
+
+## Writing useful prompts
+
+Include the intended inputs, outputs, constraints, and language-specific expectations. For example:
+
+```text
+Read a TSV path from the first command-line argument, validate the required
+columns, and write the filtered rows to output/filtered.tsv. Keep error messages
+on stderr and add only direct Python dependencies.
+```
+
+The agent sees authoring instructions for the selected CODE type, but it does not know the surrounding workflow unless you describe the expected paths, parameters, and output contract.
+
+## Troubleshooting
+
+| Symptom | What to check |
+| --- | --- |
+| The coding-agent control is missing | Configure at least one provider, then refresh the CODE page. |
+| The sidebar remains on “Waiting for the coding-agent worker” | Confirm that `agent-worker` is running, listens to the `agent,acp` queues, and can start the selected runner image. |
+| “Credentials configured” is shown but the prompt fails | Verify the API key or Codex login, provider ID, model configuration, proxy, and outbound network access. Credential availability is not a live validation. |
+| The session limit is reached | Close unused coding sidebars and check `max_sessions_per_user`, `max_sessions_system`, and worker concurrency. |
+| A model or reasoning option is missing | The selected ACP adapter did not advertise that option. Check the provider configuration and reopen the sidebar. |
+| The editor cannot be changed | Wait for the active turn to finish, select **Stop**, or accept/reject the pending proposal. |
+
+After deployment, verify one real session and proposal with your own provider credentials. Static checks cannot confirm provider authentication, image availability, or outbound networking on the worker host.
