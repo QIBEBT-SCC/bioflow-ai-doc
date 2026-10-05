@@ -1,0 +1,208 @@
+---
+title: 工作流连接与校验规则
+description: 了解节点端口、输入数量、CODE、子图和 ForEach 的连接方式，以及常见校验错误的处理方法
+icon: Workflow
+---
+
+工作流中的连线表示数据依赖：上游节点的**输出端口**连接下游节点的**输入端口**，下游使用这些数据完成分析。本页介绍构建工作流时需要遵守的连接规则，适用于手动编辑、智能体构建和导入的工作流。
+
+## 从输入到结果连接工作流
+
+1. **选择执行范围。**样本级工作流处理单个样本；项目级工作流用于项目数据和跨样本汇总。子图应与主工作流使用相同范围。
+2. **添加数据来源。**例如 File Input、Pair-end Reads Input、String Value、Text File 或参考基因组。
+3. **添加分析节点。**按照工具端口说明，把文件、目录或字符串输出连接到对应输入。双端测序数据通常分别连接 `r1` 和 `r2`。
+4. **补齐输入并填写参数。**工具和普通子图的每个输入端口都必须有一条连线。需要提取文件、汇集文件或绑定脚本参数时，在上下游之间加入处理器。
+5. **连接后续分析或结果节点。**可以接入 Sample Mark / Project Mark 保存可复用结果，或使用 Image Preview 查看图片。
+6. **保存并处理校验错误。**修复错误后再保存或运行；删除节点、移除连线或修改子图接口后，也需要重新补齐受影响的连接。
+
+例如，一个读取双端数据并继续分析的结构可以是：
+
+```text
+Pair-end Reads Input.r1 ──→ 工具的 R1 输入
+Pair-end Reads Input.r2 ──→ 工具的 R2 输入
+工具的结果目录 ──→ Select File in Folder.folder_path
+Select File in Folder.file_path ──→ 下一个工具的文件输入
+```
+
+这里的“R1 输入”“结果目录”等名称仅作示意。具体工具的端口由工具定义决定，请使用节点实际展示的端口。
+
+<Callout type="info">
+  智能体修改工作流、保存和执行前检查使用同一套规则。画布允许暂时编辑未完成的图，并不表示它已经通过校验；缺少必需输入的工作流不能保存。
+</Callout>
+
+## 所有连线都要遵守的规则
+
+- **连接真实端口。**连线两端的节点必须存在，输出和输入端口也必须存在。修改工具或子图端口后，需要重新检查旧连线。
+- **保持方向。**连接输出到输入，不能连接输入到输入或输出到输出。
+- **不要重复绑定。**同一个上游输出到同一个下游输入的连线只能有一条；子图展开后也不能形成相同的重复绑定。
+- **不能形成环。**例如 `A → B → C → A` 会被拒绝。需要对一组文件重复执行时，使用 ForEach。
+- **输出可以不用，也可以分支。**普通输出可以不接下游，或接入多个不同输入；ForEach 的 `collection` 输出有额外限制，见下文。
+
+### 每类节点需要几条输入？
+
+数量限制作用于**输入端口**，不是整个节点。
+
+| 节点 | 输入规则 |
+| --- | --- |
+| Tool | 每个已声明的输入端口恰好一条连线；没有输入端口的工具不需要连线 |
+| 普通 Subgraph | 每个对外输入端口恰好一条连线；没有对外输入的子图不需要连线 |
+| 大多数 Processor | 每个输入端口至少一条连线，校验允许同一端口接收多个上游 |
+| ForEach 文件集合处理器（`collect_file_collection`） | `folder_path` 恰好一条连线 |
+| NCBI Reference Genome | `species_name` 和 `ncbi_tax_id` 至少连接一个，可以同时连接两个 |
+| Bash / Python / R CODE | 可以没有输入，或接收多个输入；每条输入都必须来自 Bind Parameter |
+| Downstream Summary | `input_files` 至少一条连线，可以接收多个上游；没有输出端口 |
+| Image Preview | `image_path` 最多一条连线；允许暂时不连接 |
+| Note | 不参与数据连线 |
+| 其他资源与 String Value | 没有输入端口，直接提供输出 |
+
+例如，多份文件可以汇入 Copy Files to Folder 的 `files` 输入，再将生成的 `folder_path` 接到工具的目录输入。不要把多份文件直接接到同一个工具输入端口。
+
+当前画布会阻止向已连接的输入端口再拖入一条连线。多输入汇集结构可以通过智能体或导入工作流构建，后端仍按上表校验。
+
+## 常用处理器怎么接
+
+| 处理器 | 输入 → 输出 | 使用方式 |
+| --- | --- | --- |
+| Select File in Folder | `folder_path` → `file_path` | 从上游目录选择文件，填写 `file_name` |
+| Read File Content | `folder_path` → `value` | 读取目录内的文本文件，将内容传给需要字符串的输入 |
+| Join Path | `base_path` → `path` | 在上游路径后拼接 `relative_path` |
+| Copy Files to Folder | `files` → `folder_path` | 汇集多个文件，填写输出目录名 `folder_name` |
+| Collect Mount Directories | `dirs` → `mount_dir_list` | 汇集工具工作目录，供支持挂载列表的工具目录输入使用 |
+| Rename File | `old_file` → `renamed_file` | 重命名文件，填写 `new_file_name` |
+| Compress | `input_path` → `compressed_path` | 指定压缩格式和输出文件名 |
+| Decompress | `compressed_path` → `output_path` | 解压文件或归档 |
+| Bind Parameter | `file` → `file_with_param` | 为 CODE 输入指定参数名 `parameter` |
+| Sample Mark / Project Mark | `file` → 无 | 为当前样本或项目登记结果 |
+| ForEach 文件集合处理器 | `folder_path` → `collection` | 按 `pattern` 选择文件，再连接子图 |
+
+多输入通过连接数量检查，不代表任意文件操作都适合多个上游。按节点用途选用：需要汇集文件时使用 Copy Files to Folder，需要汇集挂载目录时使用 Collect Mount Directories。
+
+### 参数填写规则
+
+| 参数 | 校验要求与示例 |
+| --- | --- |
+| Read File Content 的 `file_name` | 非空的相对文件名或 glob，例如 `report.tsv`、`*.txt`；不能是绝对路径、`.`、含 `..` 路径段或反斜杠的路径 |
+| Join Path 的 `relative_path` | 非空的相对路径，例如 `results/report.tsv`；不能是绝对路径、`.`、含 `..` 路径段或反斜杠的路径 |
+| Rename File 的 `new_file_name`、Text File 的 `file_name` | 只能是一个非空文件名，例如 `samples.tsv`；不能是目录路径、`.`、`..` 或含反斜杠的名称 |
+| Compress | `compressed_file_name` 只能是文件名，后缀必须与 `compression_format` 一致，例如 `results.tar.gz` 对应 `.tar.gz` |
+| Text File 的 `content` | UTF-8 内容不超过 5 MiB |
+| ForEach 的 `pattern` | 不能为空或全为空格；使用相对目录的 glob，例如 `*.fasta` |
+| ForEach 的 `subfolder_prefix` | 1–64 个字符，首字符为英文字母或数字，其余允许英文字母、数字、`.`、`_`、`-`；默认 `item` |
+| Mark 的 `mark_name` | 1–50 个字符，以小写字母开头，其余只能是小写字母、数字或下划线，例如 `aligned_bam` |
+| Sample Mark Collection 的 `mark_names` | 至少一个名称，每个名称遵守同样的 Mark 命名规则 |
+
+Compress 支持 `.zip`、`.tar`、`.tar.gz`、`.tar.bz2`、`.tar.xz`、`.gz`、`.bz2` 和 `.xz`。其中 `.gz`、`.bz2`、`.xz` 用于普通文件；需要打包目录时使用归档格式，例如 `.tar.gz`。
+
+## CODE 输入必须先绑定参数
+
+Bash、Python 和 R 节点的输入统一使用 `input_files`。每个上游必须是 Bind Parameter（`bind_param`），不能把资源节点、工具输出或子图接口直接接到 CODE。
+
+```text
+File Input.file_path ──→ Bind Parameter.file
+                         parameter = --input-file
+Bind Parameter.file_with_param ──→ Python CODE.input_files
+Python CODE.output_folder ──→ Select File in Folder.folder_path
+```
+
+需要多个文件参数时，为每个参数添加相应的 Bind Parameter，再汇入 CODE 的 `input_files`。选择不同的参数选项并与脚本保持一致，例如 Python 使用 `--input-file`，Bash 使用 `-f`；Python / R 的运行器要求参数以 `-` 开头且不能重复。子图的对外输入也应先绑定到内部 Bind Parameter 的 `file`，再连接 CODE。
+
+不需要文件输入的脚本可以不连接 `input_files`。连接规则通过只表示输入来源合法，不会检查脚本能否运行。需要配置辅助编写脚本的智能体时，见 <DynamicLink href="/[lang]/docs/configuration/coding-agents">编码智能体</DynamicLink>。
+
+## 子图通过接口连接
+
+子图必须有接口定义。父工作流只连接子图公开的输入、输出，不直接连接内部节点。
+
+| 接口 | 规则 |
+| --- | --- |
+| 对外输入 | 每个输入至少绑定一个真实内部输入端口；一个输入可以分发给多个内部节点，但不能重复绑定同一个目标 |
+| 对外输出 | 每个输出指定一个真实内部输出端口作为来源 |
+| 端口身份 | 输入列表内、输出列表内的端口 ID 各自唯一；显示名称可以修改 |
+| 内部输入 | 外部接口绑定也计入输入数量；工具输入不能同时由接口和内部连线重复供给 |
+| 执行范围 | 子图与父工作流一致，不能混用样本级和项目级 |
+| 嵌套 | 最多嵌套 32 层；每层接口和内部连接都要通过校验 |
+
+普通子图可以没有对外输入或输出，具体取决于内部结构；所有内部节点仍须满足自己的输入规则。ForEach 使用的子图必须至少声明一个对外输出。
+
+改动子图内部端口后，请检查接口绑定和父工作流上的连线。例如，删除一个被接口引用的内部节点后，需要删除或重新绑定对应接口。
+
+## 用 ForEach 对多个文件重复分析
+
+ForEach 使用一个文件集合处理器和一个普通子图。把 `collection` 接到子图中**需要逐文件变化的输入**，其他输入连接共享数据。
+
+```text
+File Input（FASTA 目录）.file_path ──→ ForEach.folder_path
+                                      pattern = *.fasta
+ForEach.collection ──→ 分析子图的 fasta 输入（每次一个文件）
+参考基因组输出 ──→ 分析子图的 reference 输入（所有文件共享）
+分析子图.results_folder ──→ 下游汇总或文件处理
+```
+
+连接时遵守以下规则：
+
+1. 文件集合处理器的 `folder_path` 只能接收一个上游目录。
+2. `collection` 只能连接普通子图的一个输入，不能直接接 Tool、CODE 或其他处理器，也不能分支到多个目标。
+3. 同一个子图最多接收一个文件集合。被连接的输入是逐项输入，不依赖它在接口列表中的顺序；其余输入是共享输入，每个仍需一条连线。
+4. `collection` 输出可以暂时不连接下游；一旦连接子图，就启用批处理规则。
+5. 批处理子图必须至少有一个对外输出。父工作流只能使用它的 `results_folder`，不能继续使用普通子图原来的输出端口；原有下游连线需要重新连接。
+6. `collection` 是批处理保留端口 ID，不能用于该子图的共享输入。文件集合自身的 `collection` 也不能导出为子图输出，应导出批处理结果 `results_folder`。
+7. 批处理子图及其嵌套子图内不能再放文件集合 / ForEach、Sample Mark 或 Project Mark。需要登记结果时，在批处理边界外连接 Mark。
+
+导入 JSON 时也使用“文件集合处理器 → 普通子图”的结构。不要手动创建内部 `foreach` 节点或固定路径运行节点。
+
+## 执行范围与 Mark
+
+| 规则 | 样本级工作流 | 项目级工作流 |
+| --- | --- | --- |
+| 登记输出 | 使用 Sample Mark | 使用 Project Mark |
+| Sample Mark Collection | 不允许 | 用于收集项目内各样本的 Mark 结果 |
+| File Input 的 `sample:` 引用 | 可以引用当前样本的输入或结果 | 不允许；跨样本汇总使用 Sample Mark Collection |
+
+Mark 的 `file` 输入必须连接。一个图内不能使用重复的 Mark 名称；提供项目上下文时，还会检查名称是否已经被对应的项目资源或样本资源占用。更换名称或处理已有映射后再提交。
+
+Sample Mark Collection 有两个用途不同的输出：`collection_manifest` 是描述收集结果的 JSON 文件；`mount_collection` 是供容器工具读取的挂载集合，应直接接到支持它的工具目录输入。后者不能当作普通文件传给 CODE 或文件处理器。
+
+## 展示节点
+
+- **Note** 只用于说明，不能接入数据连线。可选的锚点必须指向当前图中存在的非 Note 节点。
+- **Image Preview** 可以接收一条 `image_path` 输入，用于显示图片；不能作为其他节点的数据来源。
+- Note 和 Image Preview 不能作为子图的对外输出；Note 也不能接收接口绑定。
+
+## 校验报错后怎么修改
+
+校验可以一次报告多个问题。错误会给出类型、消息以及相关节点、连线或子图位置；按位置逐项修复。
+
+| 错误类型 | 常见原因 | 修改方法 |
+| --- | --- | --- |
+| `input.missing` | 工具、处理器或子图的必需输入未连接，或 NCBI 两个输入都为空 | 补齐所需连线；子图内也可以用合法接口绑定提供输入 |
+| `input.multiple` | 工具 / 子图的同一输入被多次供给，或 Image Preview 输入过多 | 保留一个上游；多文件工具输入先使用合适的汇集处理器 |
+| `edge.node` / `edge.port` | 引用了删除的节点或不存在的端口 | 重新选择真实节点和当前端口 |
+| `edge.duplicate` | 连线重复，或子图展开后重复绑定 | 删除重复连线或接口目标 |
+| `graph.cycle` | 连接形成循环依赖 | 移除回连边；逐文件重复任务改用 ForEach |
+| `code.source` | CODE 输入直接来自资源、工具或接口 | 在 CODE 前添加 Bind Parameter |
+| `interface.port` / `subgraph.interface` | 接口目标失效或缺少接口定义 | 修复子图输入、输出绑定 |
+| `collection.*` / `foreach.*` | 文件集合目标、数量、批处理输出或内部节点不符合规则 | 按 ForEach 的连接结构重新配置 |
+| `node.context` / `subgraph.scope` / `mark.storage` | 执行范围不匹配、Mark 重名或项目资源占用 | 修改范围、节点类型或 Mark 名称 |
+| `edge.presentation` / `note.anchor` / `interface.presentation` | 展示节点接入了不允许的连线或锚点失效 | 移除展示节点的数据输出，修复锚点或接口 |
+| `graph.parse` | 参数缺失、格式错误，或导入的数据结构不合法 | 按错误指出的字段补齐或修正数据 |
+| `tool.uid` / `tool.missing` / `tool.definition` | 工具引用或定义不可用 | 重新选择可用工具，并刷新其端口 |
+| `graph.empty` / `node.id` / `node.duplicate` / `node.type` / `node.internal` | 图为空、节点身份错误、类型不支持或误用了内部节点 | 添加节点，修正 ID，使用编辑器支持的节点类型 |
+| `subgraph.depth` / `graph.structure` | 嵌套过深或展开后的结构不合法 | 减少嵌套，并检查相关子图接口 |
+
+### 导入工作流 JSON 时
+
+节点 ID 在同一张图内必须非空且唯一；不同嵌套子图可以使用相同的局部 ID。连线使用真实的节点 ID，端口标识遵循下表。显示名称不能替代 ID。
+
+| 字段 | 示例 |
+| --- | --- |
+| `source` | `reads` |
+| `sourceHandle` | `reads-out-r1`，即 `<源节点ID>-out-<输出端口名>` |
+| `target` | `align` |
+| `targetHandle` | `align-in-read1`，即 `<目标节点ID>-in-<输入端口名>` |
+
+子图接口的目标使用 `node_id` 和端口名 `handle`，例如 `handle: "read1"`，不包含上表的节点前缀。出现 `edge.handle_format` 时，检查连线端口标识是否符合这个格式。
+
+## 校验通过之后还需要确认什么
+
+校验通过表示图结构、端口连接、输入数量和已检查的参数、上下文满足规则。它不会运行工具、CODE 或容器，也不会确认外部文件存在、glob 实际匹配到文件、文件内容适合下游工具，或所有工具参数在实际运行中有效。
+
+尤其要区分**文件路径、目录路径和字符串内容**：端口存在并不代表数据格式一定兼容。按端口说明连接，并在运行后查看日志和结果，确认实际分析行为。

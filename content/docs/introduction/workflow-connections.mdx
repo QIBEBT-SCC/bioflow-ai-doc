@@ -1,0 +1,208 @@
+---
+title: Workflow Connections and Validation
+description: Connect node ports, configure CODE, subgraphs and ForEach, and resolve common workflow validation errors
+icon: Workflow
+---
+
+A workflow connection represents a data dependency: an upstream **output port** connects to a downstream **input port**, which consumes that data during analysis. This guide covers the connection rules for manually edited, agent-built and imported workflows.
+
+## Connect inputs to results
+
+1. **Choose the execution scope.** Sample-level workflows process an individual sample; project-level workflows handle project data and cross-sample aggregation. Subgraphs must use the same scope as their parent.
+2. **Add data sources.** Examples include File Input, Pair-end Reads Input, String Value, Text File and reference genomes.
+3. **Add analysis nodes.** Follow each tool's port descriptions to connect files, directories or strings to the appropriate inputs. Paired-end reads typically connect through separate `r1` and `r2` outputs.
+4. **Complete inputs and parameters.** Each input port on a tool or ordinary subgraph needs one connection. Insert processors to select files, collect files or bind script parameters where needed.
+5. **Connect subsequent analysis or result nodes.** Use Sample Mark / Project Mark to register reusable results, or Image Preview to display an image.
+6. **Save and resolve validation errors.** Fix errors before saving or running. Deleting nodes, removing edges or changing subgraph interfaces also requires repairing affected inputs.
+
+A paired-end analysis followed by another tool might look like this:
+
+```text
+Pair-end Reads Input.r1 ──→ Tool's R1 input
+Pair-end Reads Input.r2 ──→ Tool's R2 input
+Tool's results directory ──→ Select File in Folder.folder_path
+Select File in Folder.file_path ──→ Next tool's file input
+```
+
+“R1 input” and “results directory” are illustrative names. Each tool definition determines its actual ports; use the ports displayed on your node.
+
+<Callout type="info">
+  Agent changes, saves and pre-execution checks use the same rules. The canvas can temporarily contain an unfinished graph; that does not mean it has passed validation. A workflow with missing required inputs cannot be saved.
+</Callout>
+
+## Rules for every connection
+
+- **Connect existing ports.** Both nodes and their output/input ports must exist. Recheck old edges after changing a tool or subgraph port.
+- **Follow the direction.** Connect an output to an input, never an input to an input or an output to an output.
+- **Avoid duplicate bindings.** An upstream output can connect to the same downstream input only once. Subgraph expansion must not produce duplicate bindings either.
+- **Keep the graph acyclic.** A connection such as `A → B → C → A` is rejected. Use ForEach to repeat analysis over a collection of files.
+- **Outputs may be unused or branch.** An ordinary output may have no consumer or feed several different inputs. ForEach's `collection` output has additional restrictions described below.
+
+### How many incoming connections are allowed?
+
+Limits apply to **each input port**, not to the node as a whole.
+
+| Node | Input rule |
+| --- | --- |
+| Tool | Exactly one connection per declared input port; tools without input ports need none |
+| Ordinary Subgraph | Exactly one connection per public input port; subgraphs without public inputs need none |
+| Most Processors | At least one connection per input port; validation allows several upstream sources on the same port |
+| ForEach file-collection processor (`collect_file_collection`) | Exactly one connection to `folder_path` |
+| NCBI Reference Genome | Connect at least one of `species_name` and `ncbi_tax_id`; both may be connected |
+| Bash / Python / R CODE | Zero or more inputs; every incoming connection must originate from Bind Parameter |
+| Downstream Summary | At least one connection to `input_files`; multiple upstream sources are allowed; no output ports |
+| Image Preview | At most one connection to `image_path`; it may remain unconnected |
+| Note | No data connections |
+| Other resources and String Value | No input ports; they provide outputs directly |
+
+For example, connect several files to Copy Files to Folder's `files` input, then connect its `folder_path` output to a tool's directory input. Do not connect several files directly to the same tool input port.
+
+The current canvas prevents dragging another edge onto an already connected input port. You can create processor fan-in through the agent or workflow import; backend validation still applies the rules in the table.
+
+## Connect common processors
+
+| Processor | Input → output | Usage |
+| --- | --- | --- |
+| Select File in Folder | `folder_path` → `file_path` | Select a file from an upstream directory using `file_name` |
+| Read File Content | `folder_path` → `value` | Read text from a file in a directory and pass its content to a string input |
+| Join Path | `base_path` → `path` | Append `relative_path` to an upstream path |
+| Copy Files to Folder | `files` → `folder_path` | Collect files into the output directory named by `folder_name` |
+| Collect Mount Directories | `dirs` → `mount_dir_list` | Collect tool working directories for a tool directory input that supports mount-list expansion |
+| Rename File | `old_file` → `renamed_file` | Rename a file using `new_file_name` |
+| Compress | `input_path` → `compressed_path` | Set the compression format and output file name |
+| Decompress | `compressed_path` → `output_path` | Decompress a file or extract an archive |
+| Bind Parameter | `file` → `file_with_param` | Specify a CODE input parameter using `parameter` |
+| Sample Mark / Project Mark | `file` → none | Register a result for the current sample or project |
+| ForEach file-collection processor | `folder_path` → `collection` | Select files with `pattern`, then connect a subgraph |
+
+Passing the connection-count check does not mean every file operation is suitable for several upstream inputs. Use Copy Files to Folder when collecting files, and Collect Mount Directories when collecting mount directories.
+
+### Parameter rules
+
+| Parameter | Requirement and example |
+| --- | --- |
+| Read File Content's `file_name` | A nonempty relative file name or glob, such as `report.tsv` or `*.txt`; no absolute path, `.`, `..` path component or backslash |
+| Join Path's `relative_path` | A nonempty relative path, such as `results/report.tsv`; no absolute path, `.`, `..` path component or backslash |
+| Rename File's `new_file_name`, Text File's `file_name` | A single nonempty file name, such as `samples.tsv`; no directory path, `.`, `..` or backslash |
+| Compress | `compressed_file_name` must be a file name with a suffix matching `compression_format`; for example, `results.tar.gz` with `.tar.gz` |
+| Text File's `content` | At most 5 MiB of UTF-8 content |
+| ForEach's `pattern` | Must not be empty or whitespace-only; use a glob relative to the directory, such as `*.fasta` |
+| ForEach's `subfolder_prefix` | 1–64 characters; starts with an ASCII letter or digit, followed by ASCII letters, digits, `.`, `_` or `-`; defaults to `item` |
+| Mark's `mark_name` | 1–50 characters; starts with a lowercase letter, followed by lowercase letters, digits or underscores; for example, `aligned_bam` |
+| Sample Mark Collection's `mark_names` | At least one name; each name follows the same Mark naming rules |
+
+Compress supports `.zip`, `.tar`, `.tar.gz`, `.tar.bz2`, `.tar.xz`, `.gz`, `.bz2` and `.xz`. The stream formats `.gz`, `.bz2` and `.xz` are for regular files. Use an archive format such as `.tar.gz` to package a directory.
+
+## Bind parameters before CODE inputs
+
+Bash, Python and R nodes receive inputs through `input_files`. Each upstream node must be Bind Parameter (`bind_param`). Do not connect a resource, tool output or subgraph interface directly to CODE.
+
+```text
+File Input.file_path ──→ Bind Parameter.file
+                         parameter = --input-file
+Bind Parameter.file_with_param ──→ Python CODE.input_files
+Python CODE.output_folder ──→ Select File in Folder.folder_path
+```
+
+For several file parameters, add the corresponding Bind Parameter nodes and connect them to CODE's `input_files`. Choose distinct options that match the script, such as `--input-file` for Python or `-f` for Bash. The Python / R runners require options to start with `-` and reject duplicate options. A public subgraph input should likewise bind to an internal Bind Parameter's `file` input before reaching CODE.
+
+Scripts that do not need file inputs can leave `input_files` unconnected. Passing connection validation confirms the input source, not whether the script will run successfully. See <DynamicLink href="/[lang]/docs/configuration/coding-agents">Coding Agents</DynamicLink> to configure an agent that helps author scripts.
+
+## Connect subgraphs through interfaces
+
+A subgraph needs an interface definition. Its parent connects only to public inputs and outputs, not directly to internal nodes.
+
+| Interface | Rule |
+| --- | --- |
+| Public input | Binds to at least one existing internal input port; it may feed several internal nodes, but cannot repeat the same target |
+| Public output | Specifies one existing internal output port as its source |
+| Port identity | IDs are unique within the input list and within the output list; display names may change |
+| Internal input | An interface binding counts as an incoming connection; a tool input cannot be supplied by both an interface and an internal edge |
+| Execution scope | Matches the parent workflow; sample-level and project-level scopes cannot be mixed |
+| Nesting | At most 32 levels; interfaces and internal connections at every level must pass validation |
+
+An ordinary subgraph may have no public inputs or outputs, depending on its internal structure. All internal nodes must still satisfy their own input rules. A subgraph used by ForEach must declare at least one public output.
+
+After changing internal ports, check both interface bindings and parent edges. For example, deleting a node referenced by an interface requires removing or rebinding that interface port.
+
+## Repeat analysis over files with ForEach
+
+ForEach uses a file-collection processor and an ordinary subgraph. Connect `collection` to the subgraph input that **varies per file**; connect shared data to the remaining inputs.
+
+```text
+File Input (FASTA directory).file_path ──→ ForEach.folder_path
+                                          pattern = *.fasta
+ForEach.collection ──→ Analysis subgraph's fasta input (one file per run)
+Reference genome output ──→ Analysis subgraph's reference input (shared)
+Analysis subgraph.results_folder ──→ Downstream aggregation or file processing
+```
+
+Follow these rules:
+
+1. The file-collection processor's `folder_path` accepts exactly one upstream directory.
+2. `collection` connects only to one input of an ordinary subgraph. It cannot feed a Tool, CODE or another processor directly, or branch to several targets.
+3. A subgraph accepts at most one file collection. The connected port is the per-item input, regardless of its position in the interface list. Other inputs are shared and still require one connection each.
+4. The `collection` output may remain unused while constructing the graph. Connecting it to a subgraph activates batch rules.
+5. The batch subgraph must declare at least one public output. Its parent can use only `results_folder`, not the ordinary subgraph's original output ports. Reconnect any existing downstream edges.
+6. The port ID `collection` is reserved for the batch input and cannot identify a shared input on that subgraph. The collection processor's own `collection` cannot be exposed as a subgraph output; expose the batch `results_folder` instead.
+7. The batch subgraph and its nested subgraphs cannot contain another collection / ForEach, Sample Mark or Project Mark. Register results with a Mark outside the batch boundary.
+
+Use the same “file-collection processor → ordinary subgraph” structure in imported JSON. Do not manually create internal `foreach` nodes or fixed-path run nodes.
+
+## Execution scope and Marks
+
+| Rule | Sample-level workflow | Project-level workflow |
+| --- | --- | --- |
+| Register an output | Use Sample Mark | Use Project Mark |
+| Sample Mark Collection | Not allowed | Collects Mark results across project samples |
+| A `sample:` reference in File Input | May refer to the current sample's input or result | Not allowed; use Sample Mark Collection for cross-sample aggregation |
+
+A Mark's `file` input must be connected. Mark names cannot repeat within a graph. With project context, validation also checks whether the name is already occupied by a corresponding project or sample resource. Choose another name or resolve the existing mapping before submitting.
+
+Sample Mark Collection has two outputs with different uses: `collection_manifest` is a JSON file describing the collected results; `mount_collection` is a mount collection for container tools and should connect directly to a tool directory input that supports it. Do not treat the latter as an ordinary file for CODE or file processors.
+
+## Presentation nodes
+
+- **Note** provides annotations and has no data connections. Its optional anchor must refer to an existing non-Note node in the current graph.
+- **Image Preview** accepts one `image_path` connection to display an image. It cannot supply data to other nodes.
+- Neither Note nor Image Preview can be a public subgraph output. Note cannot receive an interface binding either.
+
+## Resolve validation errors
+
+Validation can report several issues at once. Each error identifies its type, message and relevant node, edge or subgraph location. Use those locations to repair each issue.
+
+| Error type | Common cause | Fix |
+| --- | --- | --- |
+| `input.missing` | A required tool, processor or subgraph input is unconnected, or both NCBI inputs are empty | Complete the connections; valid interface bindings can supply internal subgraph inputs |
+| `input.multiple` | A tool / subgraph input has several suppliers, or Image Preview has too many inputs | Keep one upstream source; collect files with an appropriate processor before a tool input |
+| `edge.node` / `edge.port` | An edge references a deleted node or nonexistent port | Select an existing node and its current port |
+| `edge.duplicate` | A repeated edge or duplicate binding after subgraph expansion | Remove the repeated edge or interface target |
+| `graph.cycle` | Connections form a dependency cycle | Remove the back edge; use ForEach for per-file repetition |
+| `code.source` | CODE receives a resource, tool or interface input directly | Insert Bind Parameter before CODE |
+| `interface.port` / `subgraph.interface` | A binding is invalid or the interface definition is missing | Repair public input/output bindings |
+| `collection.*` / `foreach.*` | Invalid collection target, count, batch output or internal node | Reconfigure the ForEach structure as described above |
+| `node.context` / `subgraph.scope` / `mark.storage` | Scope mismatch, duplicate Mark name or occupied project resource | Adjust the scope, node type or Mark name |
+| `edge.presentation` / `note.anchor` / `interface.presentation` | An invalid presentation connection or missing anchor | Remove the presentation data output, or repair the anchor or interface |
+| `graph.parse` | Missing parameters, invalid fields or malformed imported data | Correct the field identified in the error |
+| `tool.uid` / `tool.missing` / `tool.definition` | A tool reference or definition is unavailable | Select an available tool and refresh its ports |
+| `graph.empty` / `node.id` / `node.duplicate` / `node.type` / `node.internal` | Empty graph, invalid node identity, unsupported type or internal node | Add nodes, correct IDs and use supported editor node types |
+| `subgraph.depth` / `graph.structure` | Excessive nesting or invalid expanded structure | Reduce nesting and check the relevant subgraph interfaces |
+
+### Importing workflow JSON
+
+Node IDs must be nonempty and unique within a graph. Different nested subgraphs may reuse local IDs. Edges reference actual node IDs and use the port identifiers below; display names cannot replace IDs.
+
+| Field | Example |
+| --- | --- |
+| `source` | `reads` |
+| `sourceHandle` | `reads-out-r1`: `<source-node-ID>-out-<output-port-name>` |
+| `target` | `align` |
+| `targetHandle` | `align-in-read1`: `<target-node-ID>-in-<input-port-name>` |
+
+Subgraph interface targets use `node_id` and a port name in `handle`, such as `handle: "read1"`, without the node prefix shown above. For `edge.handle_format`, check that edge port identifiers follow this format.
+
+## What remains to check after validation?
+
+Passing validation means the graph structure, port connections, input counts and checked parameters/context satisfy the rules. Validation does not run tools, CODE or containers. It does not establish that external files exist, a glob matches files, file content suits the downstream tool or all tool parameters work at runtime.
+
+Distinguish **file paths, directory paths and string content**: an existing port does not guarantee compatible data formats. Follow the port descriptions, then inspect run logs and results to confirm the actual analysis behavior.
