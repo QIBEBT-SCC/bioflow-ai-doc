@@ -1,15 +1,20 @@
 ---
 title: local
-description: 配置内置轻量解析器
+description: 使用 firecrawl-anydoc 本地解析文本型 PDF
 ---
 
-使用内置解析器。无需额外设置或 API key。与 MinerU 相比，解析准确率有限。
+`local` 是默认 PDF 解析器，使用随 BioFlowAI 安装的 [firecrawl-anydoc](https://github.com/firecrawl/anydoc)，在应用所在机器上将文本型 PDF 转换为 Markdown，无需单独部署解析服务或提供 API key。
 
 ## config.toml
 
 ```toml
 [pdf_parser]
 engine = "local"
+batch_size = 5
 ```
 
-无需额外配置段。当您不需要 AI 论文分析，或偏好零依赖运行时，这是最佳选项。
+无需额外的解析器配置段。Markdown 先写入临时目录，再沿用 MinerU 的公共存储流程，将原始 PDF 和 Markdown 上传到 S3，并将内容写入知识库。处理退出时清理临时文件，智能体从 S3 读取全文。
+
+<Callout type="warn">
+  本地解析不执行 OCR，也不提取独立图片文件。包含扫描页或纯图片页的 PDF 会解析失败，并提示配置 <DynamicLink href="/[lang]/docs/configuration/pdf-parser/open-mineru">Open MinerU</DynamicLink>。不会启用云端 OCR，也不会将文档发送给 Firecrawl。加密 PDF 需要先解密。
+</Callout>

@@ -1,15 +1,20 @@
 ---
 title: local
-description: Configure the built-in lightweight parser
+description: Parse text-based PDFs locally with firecrawl-anydoc
 ---
 
-Uses the built-in parser. No extra setup or API keys are required. Parsing accuracy is limited compared to MinerU.
+`local` is the default PDF parser. It uses [firecrawl-anydoc](https://github.com/firecrawl/anydoc), installed with BioFlowAI, to convert text-based PDFs to Markdown on the application host. No separate parser deployment or API key is required.
 
 ## config.toml
 
 ```toml
 [pdf_parser]
 engine = "local"
+batch_size = 5
 ```
 
-No additional section is needed. This is the best option when you do not need AI paper analysis or prefer zero-dependency operation.
+No additional parser configuration section is needed. The Markdown is written to a temporary directory, then the original PDF and Markdown are uploaded to S3 through the same storage flow as MinerU. The content is also written to the knowledge base. Temporary files are cleaned up when processing exits, and agents read the full text from S3.
+
+<Callout type="warn">
+  Local parsing does not perform OCR or extract standalone image files. A PDF containing scanned or image-only pages fails with a message suggesting <DynamicLink href="/[lang]/docs/configuration/pdf-parser/open-mineru">Open MinerU</DynamicLink>. Hosted OCR is not enabled, and documents are never sent to Firecrawl. Encrypted PDFs must be decrypted before parsing.
+</Callout>

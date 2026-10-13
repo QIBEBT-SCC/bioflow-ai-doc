@@ -1,31 +1,30 @@
 ---
 title: PDF Parser
-description: Configure the Open MinerU service used by AI agents to read scientific papers
+description: Configure local PDF parsing or a self-hosted Open MinerU service for AI agents
 ---
 
-The PDF parser extracts Markdown and images from papers before writing the documents to the knowledge base. The currently implemented runtime engine is `open_mineru`:
+The PDF parser converts papers to Markdown before writing them to the knowledge base. The default `local` engine uses [firecrawl-anydoc](https://github.com/firecrawl/anydoc) on the application host and requires no parser service or API key. The `open_mineru` engine calls a self-hosted MinerU service and also extracts images.
+
+Both engines write parsing artifacts to a temporary directory. The shared storage flow uploads the original PDF, Markdown, and any extracted images to S3, writes the content to the knowledge base, and cleans up the temporary files. Agents read the Markdown from S3.
 
 ```toml
 [pdf_parser]
-engine = "open_mineru"
+engine = "local"
 batch_size = 5
-
-[pdf_parser.open_mineru]
-api_url = "http://localhost:8000"
-timeout = 600
 ```
 
 | Key | Default | Description |
 | --- | --- | --- |
-| `engine` | `local` | Parser engine name; set it to `open_mineru` when PDF parsing is needed. |
-| `batch_size` | `5` | PDF parsing batch configuration. |
+| `engine` | `local` | Use `local` for text-based PDFs or `open_mineru` for a self-hosted parser. |
+| `batch_size` | `5` | Batch size when inserting document chunks into the knowledge base. |
 | `open_mineru.api_url` | `http://localhost:8000` | Open MinerU API root. |
 | `open_mineru.timeout` | `600` | Request timeout in seconds. |
 
 <Callout type="warn">
-  The configuration type still accepts the names `mineru`, `doc2x`, `grobid`, and `local`, but the current PDF parser dispatcher only implements `open_mineru`. Selecting another value causes an unsupported-engine error when parsing.
+  `local` does not perform OCR or extract standalone image files. A PDF containing scanned pages fails with a message suggesting `open_mineru`; it is never sent to Firecrawl's hosted OCR service. The configuration still accepts `mineru`, `doc2x`, and `grobid`, but those engines are not implemented by the runtime dispatcher.
 </Callout>
 
 <Cards>
+  <Card title="Local" href="/docs/configuration/pdf-parser/local" description="Parse text-based PDFs locally with no parser service" />
   <Card title="Open MinerU" href="/docs/configuration/pdf-parser/open-mineru" description="Configure a self-hosted PDF parsing API" />
 </Cards>
