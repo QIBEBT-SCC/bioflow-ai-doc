@@ -22,7 +22,7 @@ This is the recommended entry point for a new deployment. It generates `config.t
 | Configuration | Creates `config.toml` in the project root | An existing file can be kept |
 | Port Preflight | Finds available ports and updates configuration and Compose | No, when creating configuration |
 | Test Data | Synchronizes the example dataset from Hugging Face | Yes |
-| Project Containers | Generates `docker-compose.yml`, starts services, and waits for health checks | Yes |
+| Project Containers | Generates `docker-compose.yml`, initializes volume ownership through Compose, and waits for service readiness | Yes |
 | System Preset Data | Creates tables and imports the built-in catalog and vector indexes | Yes |
 | AI Providers and Models | Configures providers, models, and system model roles | Not run after a failed prerequisite |
 
@@ -116,7 +116,7 @@ Additional prompts depend on the selected engine:
 | `mineru` | `Request timeout (seconds)` | Positive integer; default `600` |
 
 <Callout type="warn">
-  The configuration schema accepts every listed engine name, but the current runtime dispatcher only implements `open_mineru`. See <DynamicLink href="/[lang]/docs/configuration/pdf-parser">PDF Parser</DynamicLink> before enabling document parsing.
+  The runtime implements `local` and `open_mineru`. The default `local` uses firecrawl-anydoc without a parser service or API key and supports text-based PDFs; PDFs containing scanned pages require an OCR-capable parser such as `open_mineru`. The other listed engine names remain accepted by the configuration but are not implemented. See <DynamicLink href="/[lang]/docs/configuration/pdf-parser">PDF Parser</DynamicLink> for details.
 </Callout>
 
 ## Port Preflight and Compose
@@ -152,9 +152,13 @@ When accepted, the wizard:
 
 1. Checks the selected runtime and its native Compose command.
 2. Generates the root `docker-compose.yml` and synchronizes the Web UI backend port.
-3. Prepares RustFS and Milvus volume ownership.
-4. Starts PostgreSQL, Redis, RabbitMQ, RustFS, Milvus, etcd, and the Web UI.
-5. Waits until required services are running and PostgreSQL, RustFS, and Milvus pass health checks.
+3. Runs `compose up -d`, including when project services are already running, to apply the generated configuration and run the volume initializers.
+4. Starts PostgreSQL, Redis, RabbitMQ, etcd, and the Web UI; RustFS and Milvus wait for their respective volume initializers to complete successfully.
+5. Confirms that both volume initializers exited successfully, required services are running, and PostgreSQL, RustFS, and Milvus pass health checks.
+
+All three templates under `deploy/docker/`, `deploy/podman/`, and `deploy/dev/` include `rustfs-volume-init` and `milvus-volume-init`. These short-lived containers use the same images and data mounts as their corresponding services. They run as container root, read the runtime user's UID/GID from the image, and recursively set ownership of the data directory and its existing files. The Python wizard no longer runs host-side `chown` or `podman unshare chown`.
+
+By default, the data directories are `./volumes/rustfs` and `./volumes/milvus`. Set `DOCKER_VOLUME_DIRECTORY` to change their parent directory. Each initializer writes an owner marker after the recursive ownership update: `.rustfs-volume-owner-<uid>-<gid>` or `.milvus-volume-owner-<uid>-<gid>`. An existing matching marker skips that update on later runs. After restoring files owned by a different user, remove the matching marker from the restored directory and run Compose again while the affected service is stopped. The initializer containers normally remain exited; the readiness check does not require them to keep running.
 
 ## System Preset Data
 

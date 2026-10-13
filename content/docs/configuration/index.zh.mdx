@@ -14,7 +14,7 @@ uv run bioflow-ai auto-init
 <Cards>
   <Card title="自动初始化" href="/docs/configuration/initialization" description="查看各项提示、默认值和初始化阶段" />
   <Card title="基础设施服务" href="/docs/configuration/infrastructure" description="PostgreSQL、Redis、RabbitMQ、RustFS 和 Milvus" />
-  <Card title="PDF 解析器" href="/docs/configuration/pdf-parser" description="配置 Open MinerU 解析服务" />
+  <Card title="PDF 解析器" href="/docs/configuration/pdf-parser" description="配置本地 PDF 解析器或 Open MinerU 服务" />
   <Card title="知识库" href="/docs/configuration/knowledge-base" description="配置 Milvus 和嵌入模型 API" />
 </Cards>
 
@@ -158,3 +158,14 @@ log_rotation = "10 MB"
 | `[develop]` | LangGraph checkpoint Redis 地址 |
 
 这些段的地址会在初始化端口冲突时自动同步。手动修改基础设施端口时，必须同时更新 Compose 的宿主机端口。
+
+## 内置代码助手 `[code_editing]`
+
+```toml
+[code_editing]
+session_ttl_seconds = 1800
+turn_timeout_seconds = 900
+worker_stale_seconds = 60
+```
+
+分别控制临时会话有效期、单轮执行及排队超时、执行任务的心跳超时。模型使用 LLM 管理页分配的 Coding 角色。参见[内置代码助手](/docs/configuration/code-editing)。

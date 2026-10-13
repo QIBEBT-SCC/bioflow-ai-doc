@@ -22,7 +22,7 @@ uv run bioflow-ai auto-init
 | `Configuration` | 在项目根目录生成 `config.toml` | 已有文件时可选择保留 |
 | `Port Preflight` | 寻找可用端口，并同步更新配置与 Compose | 创建配置时不可跳过 |
 | `Test Data` | 从 Hugging Face 同步示例数据 | 是 |
-| `Project Containers` | 生成 `docker-compose.yml`、启动服务并等待健康检查 | 是 |
+| `Project Containers` | 生成 `docker-compose.yml`、通过 Compose 初始化目录属主并等待服务就绪 | 是 |
 | `System Preset Data` | 创建数据表，导入内置目录和向量索引 | 是 |
 | `AI Providers and Models` | 配置 Provider、模型和系统模型角色 | 前置步骤执行失败时不运行 |
 
@@ -116,7 +116,7 @@ uv run bioflow-ai auto-init
 | `mineru` | `Request timeout (seconds)` | 正整数；默认 `600` |
 
 <Callout type="warn">
-  配置类型接受上面列出的所有 engine 名称，但当前运行时调度器只实现了 `open_mineru`。启用文档解析前，请先阅读 <DynamicLink href="/[lang]/docs/configuration/pdf-parser">PDF 解析器</DynamicLink>。
+  运行时已实现 `local` 和 `open_mineru`。默认的 `local` 使用 firecrawl-anydoc，无需解析服务或 API key，支持文本型 PDF；包含扫描页的 PDF 需要使用 `open_mineru` 等支持 OCR 的解析器。配置仍接受其他列出的 engine 名称，但运行时尚未实现。详情请阅读 <DynamicLink href="/[lang]/docs/configuration/pdf-parser">PDF 解析器</DynamicLink>。
 </Callout>
 
 ## `Port Preflight` 与 Compose
@@ -152,9 +152,13 @@ Compose 文件根据 `Container runtime` 从 `deploy/docker/docker-compose.yml` 
 
 1. 检查所选运行时及其原生 Compose 命令。
 2. 生成根目录的 `docker-compose.yml`，并同步 Web UI 后端端口。
-3. 准备 RustFS 和 Milvus volume 的所有者。
-4. 启动 PostgreSQL、Redis、RabbitMQ、RustFS、Milvus、etcd 和 Web UI。
-5. 等待所需服务运行，并确认 PostgreSQL、RustFS 和 Milvus 通过健康检查。
+3. 执行 `compose up -d`；即使项目服务已经运行，也会应用生成的配置并运行目录初始化容器。
+4. 启动 PostgreSQL、Redis、RabbitMQ、etcd 和 Web UI；RustFS 和 Milvus 分别等待自己的目录初始化容器成功完成后再启动。
+5. 确认两个目录初始化容器成功退出、所需服务运行，并确认 PostgreSQL、RustFS 和 Milvus 通过健康检查。
+
+`deploy/docker/`、`deploy/podman/` 和 `deploy/dev/` 下的三个模板都包含 `rustfs-volume-init` 和 `milvus-volume-init`。这两个临时容器与对应服务使用相同的镜像和数据挂载，以容器内 root 身份运行，从镜像读取运行用户的 UID/GID，并递归设置数据目录及已有文件的属主。Python 向导不再执行宿主机上的 `chown` 或 `podman unshare chown`。
+
+数据目录默认是 `./volumes/rustfs` 和 `./volumes/milvus`，可以通过 `DOCKER_VOLUME_DIRECTORY` 更改其父目录。每个初始化容器完成递归修改后，会写入属主标记：`.rustfs-volume-owner-<uid>-<gid>` 或 `.milvus-volume-owner-<uid>-<gid>`。后续运行发现对应标记时，会跳过这次修改。如果恢复了属主不同的数据文件，应删除恢复目录中的对应标记，并在受影响的服务停止时重新执行 Compose。初始化容器正常完成后会保持退出状态，就绪检查不会要求它们持续运行。
 
 ## `System Preset Data`
 

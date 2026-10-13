@@ -14,7 +14,7 @@ Without `config.toml`, the API, worker, and management commands that depend on g
 <Cards>
   <Card title="Automatic Initialization" href="/docs/configuration/initialization" description="Review every prompt, default, and initialization stage" />
   <Card title="Infrastructure Services" href="/docs/configuration/infrastructure" description="PostgreSQL, Redis, RabbitMQ, RustFS, and Milvus" />
-  <Card title="PDF Parser" href="/docs/configuration/pdf-parser" description="Configure the Open MinerU parsing service" />
+  <Card title="PDF Parser" href="/docs/configuration/pdf-parser" description="Configure local PDF parsing or an Open MinerU service" />
   <Card title="Knowledge Base" href="/docs/configuration/knowledge-base" description="Configure Milvus and the embedding model API" />
 </Cards>
 
@@ -158,3 +158,14 @@ Log levels accept `DEBUG`, `INFO`, `WARNING`, or `ERROR`. `log_retention` and `l
 | `[develop]` | LangGraph checkpoint Redis URL |
 
 The wizard synchronises these URLs when a default infrastructure port is occupied. When changing infrastructure ports manually, update the Compose host port at the same time.
+
+## Built-in coding assistant `[code_editing]`
+
+```toml
+[code_editing]
+session_ttl_seconds = 1800
+turn_timeout_seconds = 900
+worker_stale_seconds = 60
+```
+
+These control temporary session expiry, per-turn execution and queue timeout, and executing worker heartbeat timeout. The model comes from the Coding role in LLM management. See [Built-in coding assistant](/docs/configuration/code-editing).
