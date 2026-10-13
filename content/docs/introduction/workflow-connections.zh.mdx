@@ -106,7 +106,7 @@ Python CODE.output_folder ──→ Select File in Folder.folder_path
 
 需要多个文件参数时，为每个参数添加相应的 Bind Parameter，再汇入 CODE 的 `input_files`。选择不同的参数选项并与脚本保持一致，例如 Python 使用 `--input-file`，Bash 使用 `-f`；Python / R 的运行器要求参数以 `-` 开头且不能重复。子图的对外输入也应先绑定到内部 Bind Parameter 的 `file`，再连接 CODE。
 
-不需要文件输入的脚本可以不连接 `input_files`。连接规则通过只表示输入来源合法，不会检查脚本能否运行。需要配置辅助编写脚本的智能体时，见 <DynamicLink href="/[lang]/docs/configuration/coding-agents">编码智能体</DynamicLink>。
+不需要文件输入的脚本可以不连接 `input_files`。连接规则通过只表示输入来源合法，不会检查脚本能否运行。
 
 ## 子图通过接口连接
 

@@ -106,7 +106,7 @@ Python CODE.output_folder ──→ Select File in Folder.folder_path
 
 For several file parameters, add the corresponding Bind Parameter nodes and connect them to CODE's `input_files`. Choose distinct options that match the script, such as `--input-file` for Python or `-f` for Bash. The Python / R runners require options to start with `-` and reject duplicate options. A public subgraph input should likewise bind to an internal Bind Parameter's `file` input before reaching CODE.
 
-Scripts that do not need file inputs can leave `input_files` unconnected. Passing connection validation confirms the input source, not whether the script will run successfully. See <DynamicLink href="/[lang]/docs/configuration/coding-agents">Coding Agents</DynamicLink> to configure an agent that helps author scripts.
+Scripts that do not need file inputs can leave `input_files` unconnected. Passing connection validation confirms the input source, not whether the script will run successfully.
 
 ## Connect subgraphs through interfaces
 
