@@ -1,0 +1,47 @@
+---
+title: Built-in coding assistant
+description: Create and edit reusable Bash, Python and R CODE nodes with the system Coding model
+icon: Code
+---
+
+Administrators can open the coding assistant from the top-right chat button on a CODE node's **Create** or **Edit** page. The assistant uses the model assigned to the **Coding** role in **Settings → LLM management → Role assignment**. Configure a provider and model there, then assign the Coding role. No separate agent account or model selection is required. Model configuration changes take effect on the next request; usage is recorded against the configured model and current user.
+
+## Create or revise code
+
+1. Open **CODE Nodes**, choose Bash, Python or R, or edit an existing definition.
+2. Open the coding sidebar. Drag its left edge to adjust its width.
+3. Describe the desired behavior, CLI parameters, inputs and outputs. Every message submits the **current source and dependencies in the editor**, including manual changes and previously accepted edits.
+4. Follow the assistant's reply and expand tool entries to inspect commands and outputs. Answer clarification questions in the same conversation.
+5. If the assistant changes files, review source and dependency differences in the editor. Choose **Accept changes** to copy the candidate into the form, or **Discard changes** to retain the original. Both decisions are available to the assistant on the next turn.
+6. Click **Save code** and complete the catalog information to persist the definition through the existing save interface.
+
+<Callout type="info">
+  Accepting a proposal updates the unsaved form only. It does not write the CODE catalog or modify workflows containing earlier copies of that definition.
+</Callout>
+
+Source, dependencies and saving are locked while a turn is queued or executing, and while a proposal awaits review. An outdated proposal cannot overwrite changed editor content. Explanations, clarification questions and requests that require no changes finish normally without a proposal.
+
+## Stop, close and reconnect
+
+**Stop** cancels queued work or asks the executing task to stop. A patch already being applied finishes before its temporary directory is removed. Cancellation, errors and timeouts do not offer acceptable changes; the original editor content is retained and another message can be submitted.
+
+Closing the sidebar or leaving the page discards the conversation and cancels active work. Accepted form edits remain until you leave or explicitly save. A brief event-stream disconnection reconnects automatically and recovers the current state and pending proposal; it does not close the session.
+
+## Runtime configuration
+
+Each message runs as one task on the existing `agent` queue. Idle conversations occupy no worker. The API and agent worker share the configured API-cache Redis instance; no new database tables or general chat history are used.
+
+```toml
+[code_editing]
+session_ttl_seconds = 1800
+turn_timeout_seconds = 900
+worker_stale_seconds = 60
+```
+
+- `session_ttl_seconds`: temporary session lifetime after the last action, default 30 minutes. Streaming heartbeat comments do not extend an idle session.
+- `turn_timeout_seconds`: maximum execution time per turn and maximum queue waiting time, default 15 minutes.
+- `worker_stale_seconds`: time without an executing worker heartbeat before a session query or SSE subscription marks the turn failed, default 60 seconds.
+
+Each turn rebuilds an isolated directory from the latest editor content, then deletes it after completion or a caught error. `output/` fixtures belong to that turn only and are recreated when needed. Orphaned directories with an expired lease are reclaimed on worker startup and before another coding turn (30 minutes by default).
+
+The assistant retains the existing language skills, read-only container command tool and restricted `apply_patch` tool. This integration applies to CODE management pages; workflow code dialogs and automatic workflow code generation keep their existing behavior.
